@@ -531,6 +531,11 @@ table.cmp td { font-variant-numeric: tabular-nums; }
 .otabs .btn[aria-selected="true"] { background: var(--k-ink, #1d2126); color: var(--cream, #fff6d8); }
 .opane { display: grid; gap: 6px; min-width: 0; }
 .opane[hidden] { display: none; }
+.netcode { font: 400 56px/1 var(--f-num); letter-spacing: .12em; margin: 0 0 6px; }
+ul.netpl { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 4px; }
+ul.netpl li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px dashed color-mix(in srgb, currentColor 25%, transparent); }
+ul.netpl li span { margin-left: auto; opacity: .75; font-size: 14px; }
+ul.netpl em { font-style: normal; opacity: .7; font-size: 14px; }
 .opane .row { border-bottom-color: color-mix(in srgb, currentColor 18%, transparent); }
 .opane input[type=checkbox] { width: 22px; height: 22px; }
 
@@ -623,7 +628,7 @@ svg.flag { flex: none; width: 18px; height: 12px; box-shadow: 0 0 0 1.5px var(--
         <p class="tlead"><span class="altbadge">World</span> Karts más ágiles y un <b>salto</b> en el botón de derrape: púlsalo para encarar la curva y mantenlo para derrapar. Empiezas con un <b>kart casero</b> y un puñado de euros. Cada campeonato son <b>cuatro carreras</b> en circuitos sorteados, la última larga: los premios pagan piezas, las piezas se gastan y, si te quedas sin dinero, la run se acaba.</p>
         <div class="tmenu">
           <button class="btn big pri" id="btnChamp"><span class="bt">Campeonato</span><span class="bs" id="champSub"></span></button>
-          <button class="btn big" id="btnOnline"><span class="bt">Online, 2 jugadores</span><span class="bs">Corre contra un amigo por internet: uno crea la partida y le pasa el código al otro.</span></button>
+          <button class="btn big" id="btnOnline"><span class="bt">Online con amigos</span><span class="bs">Hasta 4 jugadores por internet: carreras sueltas o Grand Prix de 4 circuitos con puntos.</span></button>
           <button class="btn big" id="btnQuick"><span class="bt">Carrera rápida</span><span class="bs">Eliges circuito, neumáticos y vueltas; kart de alquiler para todos. No toca tu partida.</span></button>
           <button class="btn big" id="btnFree"><span class="bt">Pruebas libres</span><span class="bs">Todos los circuitos y setups, con los ajustes de física. Sin dinero ni rivales.</span></button>
         </div>
@@ -1732,7 +1737,7 @@ function makeRivals(track, diffKey, form, laps, rnd, champ) {
   });
 }
 function assignGrid(rivals, playerSlot, order) {
-  const slots = [0, 1, 2, 3, 4, 5].filter(s => s !== playerSlot);
+  const slots = Array.from({ length: Math.max(6, rivals.length + 1) }, (_, k) => k).filter(s => s !== playerSlot);
   order.forEach((ri, k) => { const r = rivals[ri]; r.d0 = 6 + 5 * slots[k]; r.lane = r.tgt = r.latOff = (slots[k] % 2 ? 1 : -1) * 1.4; });
 }
 const LAUNCH_A = 4;
@@ -4147,7 +4152,7 @@ function raceHud() {
     cdTxt.textContent = L.green ? '¡Ya!' : '';
   }
   if (!on) return;
-  posHud.textContent = 'P' + race.pos + ' de 6';
+  posHud.textContent = 'P' + race.pos + ' de ' + (race.rivals.length + 1);
   if (race.quali) { const b = pBest(race); if (b === null) posHud.textContent = 'Sin tiempo'; raceInfo.textContent = 'Clasificación: ' + (LAP.started ? 'vuelta ' + Math.min(QUALI_LAPS, LAP.n) + ' de ' + QUALI_LAPS : 'vuelta de lanzamiento') + (b !== null ? ', mejor ' + fmt(b) : ''); }
   else raceInfo.textContent = race.state === 'grid' ? 'En parrilla' : 'Vuelta ' + Math.max(1, Math.min(race.laps, LAP.cnt + 1)) + ' de ' + race.laps + ', ' + fmt(race.t || 0);
   const dOn = draftK > .08;
@@ -4290,17 +4295,28 @@ $('#namesBox').addEventListener('change', e => {
   if (UI === 'garage') renderGarage(); else if (UI === 'menu') renderMenu();
 });
 
-/* ====================== ONLINE, 2 JUGADORES ======================
-   Conexión directa entre los dos navegadores (WebRTC, con PeerJS para presentarse y su servidor gratuito).
-   Cada jugador simula su propio kart y envía su estado 30 veces por segundo; el del otro se dibuja ~100 ms en el
-   pasado, interpolado, y es un cuerpo sólido contra el que chocas. El que crea la partida (anfitrión) conduce además
-   a los rivales de la IA y los retransmite 20 veces por segundo. Con ?local en la dirección, dos pestañas del mismo
-   navegador se conectan sin internet (para pruebas). */
-const NET = { on: false, role: null, code: '', tr: null, peer: { name: '', color: '#888', on: false }, rtt: 0, buf: [], aiBuf: [],
-              cfg: { track: 'parque', laps: 3, tyre: 'n_medios', diff: 'normal', ai: true }, sendT: 0, aiT: 0, pingT: 0, status: '', inRace: false, resT: 0 };
-const NET_DELAY = 110, NET_LOCAL = /[?&#]local/.test(location.search + location.hash);
+/* ====================== ONLINE, HASTA 4 JUGADORES Y GRAND PRIX ======================
+   Conexión directa entre navegadores (WebRTC con PeerJS). Quien crea la partida (anfitrión) es el centro: cada amigo
+   se conecta a él y él reenvía a los demás. Cada jugador simula su propio kart y envía su estado 30 veces por segundo;
+   los de los demás se dibujan ~110 ms en el pasado, interpolados, y son sólidos (chocas contra ellos). El anfitrión
+   conduce además a los rivales de la IA y los retransmite 20 veces por segundo, lleva el reloj de los resultados y los
+   puntos del Grand Prix (copas de 4 circuitos). Neumáticos: cada uno elige los suyos en la sala. */
+const NET_MAX = 4, NET_DELAY = 110, GP_POINTS = [15, 12, 10, 8, 6, 4, 2, 1];
+const CUPS = [
+  { id: 'atlantica', name: 'Copa Atlántica', tracks: ['parque', 'puerto', 'ribera', 'aerodromo'] },
+  { id: 'mundo', name: 'Copa del Mundo', tracks: ['kioto', 'varmland', 'ovalo', 'tierra'] },
+  { id: 'espejo', name: 'Copa Espejo', tracks: ['parque_r', 'puerto_r', 'ribera_r', 'aerodromo_r'] },
+  { id: 'extrema', name: 'Copa Extrema', tracks: ['kioto_r', 'varmland_r', 'ovalo_r', 'tierra_r'] },
+  { id: 'azar', name: 'Copa al azar', tracks: null }
+];
+const NET = { on: false, role: null, code: '', tr: null, me: null, players: [], rtt: 0, bufs: new Map(), aiBuf: [],
+              cfg: { mode: 'race', cup: 'atlantica', track: 'parque', laps: 3, diff: 'normal', ai: true }, myTyre: 'n_medios',
+              gp: null, sendT: 0, aiT: 0, pingT: 0, status: '', inRace: false, resT: 0, ready: false, pingAt: new Map() };
 try { Object.assign(NET.cfg, JSON.parse(localStorage.getItem('krpg_netcfg') || '{}')); } catch (e) {}
+try { const t = localStorage.getItem('krpg_nettyre'); if (BOX_TYRES.includes(t)) NET.myTyre = t; } catch (e) {}
 const myName = () => (NAMES.me || 'Jugador').slice(0, 14);
+const NET_COLS = ['#c2185b', '#1565c0', '#2e7d32', '#ef6c00', '#6b46c1', '#00838f', '#f2b300', '#5d4037'];
+const pById = id => NET.players.find(p => p.id === id);
 function loadPeerJS() {
   return new Promise((res, rej) => {
     if (window.Peer) return res();
@@ -4309,102 +4325,147 @@ function loadPeerJS() {
     add('peerjs.min.js', () => add('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', () => rej(new Error('no se pudo cargar PeerJS'))));
   });
 }
-function localTransport(code, role) {
-  const ch = new BroadcastChannel('krpg-' + code), tr = { local: true };
-  tr.send = o => { const m = JSON.stringify({ from: role, o }), lag = +(window.__netLag || 0); if (lag) setTimeout(() => { try { ch.postMessage(m); } catch (e) {} }, lag); else ch.postMessage(m); };
-  ch.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } if (m.from !== role && tr.onmsg) tr.onmsg(m.o); };
-  tr.close = () => { try { ch.postMessage(JSON.stringify({ from: role, o: { k: 'bye' } })); } catch (e) {} ch.close(); };
-  setTimeout(() => { tr.onopen && tr.onopen(); }, 30);
-  return tr;
-}
-// solo para pruebas automáticas: un repetidor WebSocket local hace de «internet» entre dos navegadores
-function relayTransport(code, role) {
-  const ws = new WebSocket(window.__netRelay), tr = { local: true }, q = [];
-  ws.onopen = () => { ws.send(JSON.stringify({ join: code, role })); q.splice(0).forEach(m => ws.send(m)); setTimeout(() => tr.onopen && tr.onopen(), 30); };
-  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } const lag = +(window.__netLag || 0); lag ? setTimeout(() => tr.onmsg && tr.onmsg(m), lag) : tr.onmsg && tr.onmsg(m); };
-  tr.send = o => { const m = JSON.stringify(o); if (ws.readyState === 1) ws.send(m); else q.push(m); };
-  tr.close = () => { tr.send({ k: 'bye' }); setTimeout(() => ws.close(), 50); };
-  return tr;
-}
+/* Transporte. Anfitrión: onready(), onjoin(id), onleave(id), onmsg(id, o), sendTo(id, o), broadcast(o, except).
+   Invitado: onopen(), onclose(), onmsg(o), send(o). Los dos: onerror(e), close(). */
 async function peerTransport(code, role) {
   await loadPeerJS();
-  const tr = {}, wire = conn => {
-    tr.conn = conn;
-    conn.on('open', () => tr.onopen && tr.onopen());
-    conn.on('data', d => tr.onmsg && tr.onmsg(d));
-    conn.on('close', () => { if (tr.conn === conn) { tr.conn = null; tr.onclose && tr.onclose(); } });
-    conn.on('error', e => tr.onerror && tr.onerror(e));
-  };
-  const peer = role === 'host' ? new Peer('krpg-' + code) : new Peer();
+  const tr = { conns: new Map() }, peer = role === 'host' ? new Peer('krpg-' + code) : new Peer();
   tr.peer = peer;
   peer.on('error', e => tr.onerror && tr.onerror(e));
   peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) {} });
-  if (role === 'host') peer.on('connection', conn => { if (tr.conn && tr.conn.open) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 300); }); return; } wire(conn); });
-  else peer.on('open', () => wire(peer.connect('krpg-' + code, { reliable: true, serialization: 'json' })));
-  if (role === 'host') peer.on('open', () => tr.onready && tr.onready());
-  tr.send = o => { if (tr.conn && tr.conn.open) try { tr.conn.send(o); } catch (e) {} };
-  tr.close = () => { tr.send({ k: 'bye' }); setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 150); };
+  if (role === 'host') {
+    peer.on('open', () => tr.onready && tr.onready());
+    peer.on('connection', conn => {
+      const id = conn.peer;
+      conn.on('open', () => { tr.conns.set(id, conn); tr.onjoin && tr.onjoin(id); });
+      conn.on('data', d => tr.onmsg && tr.onmsg(id, d));
+      conn.on('close', () => { if (tr.conns.delete(id)) tr.onleave && tr.onleave(id); });
+    });
+    tr.sendTo = (id, o) => { const c = tr.conns.get(id); if (c && c.open) try { c.send(o); } catch (e) {} };
+    tr.broadcast = (o, except) => { for (const [id, c] of tr.conns) if (id !== except && c.open) try { c.send(o); } catch (e) {} };
+    tr.drop = id => { const c = tr.conns.get(id); if (c) setTimeout(() => { try { c.close(); } catch (e) {} }, 300); };
+    tr.close = () => { tr.broadcast({ k: 'bye' }); setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 150); };
+  } else {
+    peer.on('open', () => {
+      const conn = peer.connect('krpg-' + code, { reliable: true, serialization: 'json' }); tr.conn = conn;
+      conn.on('open', () => tr.onopen && tr.onopen());
+      conn.on('data', d => tr.onmsg && tr.onmsg(d));
+      conn.on('close', () => tr.onclose && tr.onclose());
+    });
+    tr.send = o => { if (tr.conn && tr.conn.open) try { tr.conn.send(o); } catch (e) {} };
+    tr.close = () => { tr.send({ k: 'bye' }); setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 150); };
+  }
+  return tr;
+}
+// solo para pruebas automáticas: un repetidor WebSocket local hace de «internet» con la misma forma (estrella)
+function relayTransport(code, role) {
+  const ws = new WebSocket(window.__netRelay), tr = {}, q = [], lag = () => +(window.__netLag || 0);
+  const later = f => { const l = lag(); if (l) setTimeout(f, l); else f(); };
+  const out = m => { const s = JSON.stringify(m); if (ws.readyState === 1) ws.send(s); else q.push(s); };
+  ws.onopen = () => { ws.send(JSON.stringify({ join: code, role })); q.splice(0).forEach(m => ws.send(m)); };
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } later(() => {
+    if (role === 'host') { if (m.ready) tr.onready && tr.onready(); else if (m.join) tr.onjoin && tr.onjoin(m.join); else if (m.leave) tr.onleave && tr.onleave(m.leave); else if (m.from) tr.onmsg && tr.onmsg(m.from, m.o); }
+    else { if (m.ok) tr.onopen && tr.onopen(); else if (m.err) tr.onerror && tr.onerror({ type: 'peer-unavailable' }); else if (m.o) tr.onmsg && tr.onmsg(m.o); }
+  }); };
+  ws.onclose = () => { if (role !== 'host') tr.onclose && tr.onclose(); };
+  if (role === 'host') { tr.sendTo = (id, o) => out({ to: id, o }); tr.broadcast = (o, except) => out({ to: '*', except, o }); tr.drop = () => {}; }
+  else tr.send = o => out({ o });
+  tr.close = () => { if (role === 'host') tr.broadcast({ k: 'bye' }); else tr.send({ k: 'bye' }); setTimeout(() => ws.close(), 60); };
   return tr;
 }
 const newCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+function netPlayersChanged() {
+  // colores distintos para todos (si coinciden, el anfitrión reparte otro)
+  const used = new Set();
+  for (const p of NET.players) { let c = p.want; if (used.has(c)) c = NET_COLS.find(x => !used.has(x)) || c; p.color = c; used.add(c); }
+  if (NET.role === 'host' && NET.tr) NET.tr.broadcast({ k: 'players', players: NET.players });
+  if (!NET.inRace || UI === 'results') netRender();
+}
 async function netStart(role, code) {
-  NET.on = true; NET.role = role; NET.code = code || newCode(); NET.helloBack = false; NET.rtt = 0; NET.peer = { name: '', color: '#888', on: false }; NET.status = role === 'host' ? 'Preparando la partida…' : 'Buscando la partida ' + NET.code + '…';
-  netLobby();
-  try { NET.tr = window.__netRelay ? relayTransport(NET.code, role) : NET_LOCAL ? localTransport(NET.code, role) : await peerTransport(NET.code, role); }
-  catch (e) { NET.status = 'No se pudo cargar la conexión online. Comprueba tu internet.'; NET.on = false; netLobby(); return; }
+  NET.on = true; NET.role = role; NET.code = code || newCode(); NET.rtt = 0; NET.players = []; NET.me = null; NET.gp = null; NET.ready = false;
+  NET.status = role === 'host' ? 'Preparando la partida…' : 'Buscando la partida ' + NET.code + '…';
+  netRender();
+  try { NET.tr = window.__netRelay ? relayTransport(NET.code, role) : await peerTransport(NET.code, role); }
+  catch (e) { NET.status = 'No se pudo cargar la conexión online. Comprueba tu internet.'; NET.on = false; netRender(); return; }
   const tr = NET.tr;
-  tr.onready = () => { NET.status = 'Pasa este código a tu amigo: ' + NET.code; netLobby(); };
-  tr.onopen = () => { tr.send({ k: 'hello', name: myName(), color: playerColor() }); if (NET.role === 'host' && NET_LOCAL) { NET.status = 'Pasa este código a tu amigo: ' + NET.code; netLobby(); } };
-  tr.onmsg = netMsg;
-  tr.onclose = () => netPeerLeft();
   tr.onerror = e => {
     const t = e && e.type;
-    if (t === 'unavailable-id' && NET.role === 'host') { try { tr.peer.destroy(); } catch (er) {} netStart('host'); return; }
-    NET.status = t === 'peer-unavailable' ? 'No hay ninguna partida con el código ' + NET.code + '. Revísalo con tu amigo.' :
-                 t === 'network' || t === 'server-error' || t === 'socket-error' ? 'No se pudo contactar con el servidor de emparejamiento. Prueba de nuevo en un momento.' :
-                 'Error de conexión (' + (t || 'desconocido') + ').';
-    if (t === 'peer-unavailable') { NET.on = false; try { tr.peer.destroy(); } catch (er) {} }
-    netLobby();
+    if (t === 'unavailable-id' && role === 'host') { try { tr.peer.destroy(); } catch (er) {} netStart('host'); return; }
+    NET.status = t === 'peer-unavailable' ? 'No hay ninguna partida con el código ' + NET.code + '. Revísalo con quien la creó.' :
+      t === 'network' || t === 'server-error' || t === 'socket-error' ? 'No se pudo contactar con el servidor de emparejamiento. Prueba de nuevo en un momento.' : 'Error de conexión (' + (t || 'desconocido') + ').';
+    if (t === 'peer-unavailable') { NET.on = false; try { tr.peer && tr.peer.destroy(); } catch (er) {} }
+    netRender();
   };
-}
-function netClose() { if (NET.tr) try { NET.tr.close(); } catch (e) {} NET.tr = null; NET.on = false; NET.inRace = false; NET.peer.on = false; }
-function netPeerLeft() {
-  NET.peer.on = false; NET.status = (NET.peer.name || 'Tu amigo') + ' se ha desconectado.';
-  if (race && race.net) { const r = race.rivals.find(x => x.net); if (r && !r.done) { r.done = true; r.left = true; r.finT = null; r.kt.ghost = true; } }
-  if (UI === 'results') { if (NET.inRace) netResults(); else netLobby(); }
-}
-function netMsg(o) {
-  if (!o || typeof o.k !== 'string') return;
-  const now = performance.now();
-  switch (o.k) {
-    case 'hello':
-      { const col = /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : '#888';                  // si los dos lleváis el mismo color, el suyo se ve distinto
-        NET.peer = { name: String(o.name || 'Amigo').slice(0, 14), color: col.toLowerCase() === playerColor().toLowerCase() ? (col.toLowerCase() === '#1565c0' ? '#2e7d32' : '#1565c0') : col, on: true }; }
-      if (!NET.helloBack) { NET.helloBack = true; NET.tr.send({ k: 'hello', name: myName(), color: playerColor() }); }
-      NET.status = NET.role === 'host' ? NET.peer.name + ' está en la sala.' : 'Conectado con ' + NET.peer.name + '. Espera a que empiece la carrera.';
-      if (NET.role === 'host') NET.tr.send({ k: 'cfg', cfg: NET.cfg });
-      if (!NET.inRace) netLobby();
-      break;
-    case 'full': NET.status = 'Esa partida ya tiene dos jugadores.'; netClose(); netLobby(); break;
-    case 'cfg': if (NET.role === 'guest') { NET.cfg = Object.assign({}, NET.cfg, o.cfg); if (!NET.inRace) netLobby(); } break;
-    case 'start': if (NET.role === 'guest') netBeginRace(o, false); break;
-    case 'lobby': if (NET.role === 'guest') netToLobby(); break;
-    case 'st': NET.buf.push(Object.assign({ t: now }, o)); if (NET.buf.length > 90) NET.buf.shift(); netRemoteFinish(o); break;
-    case 'ai': NET.aiBuf.push({ t: now, r: o.r }); if (NET.aiBuf.length > 60) NET.aiBuf.shift(); break;
-    case 'ping': NET.tr.send({ k: 'pong', t: o.t }); break;
-    case 'pong': { const r = now - o.t; NET.rtt = NET.rtt ? NET.rtt * .8 + r * .2 : r; break; }
-    case 'bye': netPeerLeft(); break;
+  if (role === 'host') {
+    NET.me = 'h'; NET.players = [{ id: 'h', name: myName(), want: playerColor(), color: playerColor(), ready: true, rtt: 0, host: true }];
+    tr.onready = () => { NET.status = 'Pasa el código a tus amigos (hasta ' + (NET_MAX - 1) + ').'; netRender(); };
+    tr.onjoin = id => { if (NET.players.length >= NET_MAX) { tr.sendTo(id, { k: 'full' }); tr.drop(id); } };
+    tr.onleave = id => netLeft(id);
+    tr.onmsg = (id, o) => netHostMsg(id, o);
+  } else {
+    tr.onopen = () => tr.send({ k: 'hello', name: myName(), color: playerColor() });
+    tr.onclose = () => { if (NET.on) { NET.status = 'Se ha cortado la conexión con el anfitrión.'; netEndAll(); } };
+    tr.onmsg = o => netGuestMsg(o);
   }
 }
-function netRemoteFinish(o) {
+function netClose() { if (NET.tr) try { NET.tr.close(); } catch (e) {} NET.tr = null; NET.on = false; NET.inRace = false; NET.players = []; }
+function netEndAll() { netClose(); if (race && race.net) { leaveRace(); quickEnd(); } MODE = 'menu'; netRender(); }
+function netLeft(id) {
+  const p = pById(id); if (!p) return;
+  NET.players = NET.players.filter(x => x.id !== id); NET.bufs.delete(id);
+  NET.status = p.name + ' se ha ido.';
+  if (race && race.net) { const r = race.rivals.find(x => x.pid === id); if (r && !r.done) { r.done = true; r.left = true; r.finT = null; r.estT = Infinity; r.kt.ghost = true; } }
+  if (NET.role === 'host' && NET.tr) NET.tr.broadcast({ k: 'left', id });
+  netPlayersChanged();
+}
+function netHostMsg(id, o) {
+  if (!o || typeof o.k !== 'string' || !NET.tr) return;
+  const now = performance.now(), p = pById(id);
+  switch (o.k) {
+    case 'hello':
+      if (p) return;
+      if (NET.players.length >= NET_MAX) { NET.tr.sendTo(id, { k: 'full' }); NET.tr.drop(id); return; }
+      NET.players.push({ id, name: String(o.name || 'Amigo').slice(0, 14), want: /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : '#888888', color: '#888888', ready: false, rtt: 0 });
+      NET.tr.sendTo(id, { k: 'welcome', you: id, cfg: NET.cfg, gp: NET.gp, inRace: NET.inRace });
+      NET.status = NET.players[NET.players.length - 1].name + ' ha entrado.';
+      netPlayersChanged();
+      break;
+    case 'ready': if (p) { p.ready = !!o.v; netPlayersChanged(); } break;
+    case 'st': if (!p) return; netBuf(id, o, now); NET.tr.broadcast(Object.assign({}, o, { id }), id); netRemoteFinish(id, o); break;
+    case 'ping': NET.tr.sendTo(id, { k: 'pong', t: o.t }); break;
+    case 'pong': if (p) { const r = now - o.t; if (r >= 0 && r < 5000) p.rtt = p.rtt ? p.rtt * .7 + r * .3 : r; } break;
+    case 'bye': NET.tr.drop(id); netLeft(id); break;
+  }
+}
+function netGuestMsg(o) {
+  if (!o || typeof o.k !== 'string' || !NET.tr) return;
+  const now = performance.now();
+  switch (o.k) {
+    case 'welcome': NET.me = o.you; NET.cfg = Object.assign({}, NET.cfg, o.cfg); NET.gp = o.gp; NET.status = o.inRace ? 'Hay una carrera en marcha: entras en la siguiente.' : 'Dentro. Marca «Listo» cuando quieras.'; netRender(); break;
+    case 'players': NET.players = o.players || []; if (!NET.inRace || UI === 'results') netRender(); break;
+    case 'full': NET.status = 'Esa partida ya está llena (' + NET_MAX + ' jugadores).'; netEndAll(); break;
+    case 'cfg': NET.cfg = Object.assign({}, NET.cfg, o.cfg); if (!NET.inRace) netRender(); break;
+    case 'start': NET.gp = o.gp || null; netBeginRace(o); break;
+    case 'res': if (race && race.net) { race.final = o.rows; NET.gp = o.gp || NET.gp; netRender(); } break;
+    case 'lobby': NET.gp = o.gp || null; netToLobby(); break;
+    case 'left': netLeft(o.id); break;
+    case 'st': if (o.id && o.id !== NET.me) { netBuf(o.id, o, now); netRemoteFinish(o.id, o); } break;
+    case 'ai': NET.aiBuf.push({ t: now, r: o.r }); if (NET.aiBuf.length > 60) NET.aiBuf.shift(); break;
+    case 'ping': NET.tr.send({ k: 'pong', t: o.t }); break;
+    case 'pong': { const r = now - o.t; if (r >= 0 && r < 5000) NET.rtt = NET.rtt ? NET.rtt * .8 + r * .2 : r; break; }
+    case 'bye': NET.status = 'El anfitrión ha cerrado la partida.'; netEndAll(); break;
+  }
+}
+function netBuf(id, o, now) { let b = NET.bufs.get(id); if (!b) NET.bufs.set(id, b = []); b.push(Object.assign({ t: now }, o)); if (b.length > 90) b.shift(); }
+function netRemoteFinish(id, o) {
   if (!race || !race.net || !(o.fin || o.ab)) return;
-  const r = race.rivals.find(x => x.net); if (!r || (r.done && !r.left)) return;
+  const r = race.rivals.find(x => x.pid === id); if (!r || r.done) return;
   r.done = true; r.finT = o.ab ? null : o.fin; r.abandon = !!o.ab; r.estT = o.ab ? Infinity : o.fin; r.kt.ghost = true;
-  if (UI === 'results') netResults();
+  if (UI === 'results') netRender();
 }
 // muestra interpolada de un búfer [{t, …}] en el instante tq; si faltan datos, extrapola con la velocidad (como mucho 0,25 s)
 function netSample(buf, tq, get) {
-  if (!buf.length) return null;
+  if (!buf || !buf.length) return null;
   let k = buf.length - 1;
   if (tq >= buf[k].t) { const p = get(buf[k]); if (!p) return null; const dt = Math.min(.25, (tq - buf[k].t) / 1000); return Object.assign({}, p, { x: p.x + p.vx * dt, y: p.y + p.vy * dt }); }
   while (k > 0 && buf[k - 1].t > tq) k--;
@@ -4414,152 +4475,243 @@ function netSample(buf, tq, get) {
   return Object.assign({}, Bq, { x: A.x + (Bq.x - A.x) * f, y: A.y + (Bq.y - A.y) * f, a: A.a + da * f, vx: A.vx + (Bq.vx - A.vx) * f, vy: A.vy + (Bq.vy - A.vy) * f, D: A.D + (Bq.D - A.D) * f });
 }
 function puppet(kt, s) { Object.assign(kt.B, { x: s.x, y: s.y, a: s.a, vx: s.vx, vy: s.vy, w: 0, steer: s.st || 0 }); }
+const asIs = m => m;
 function netHostStep() {
   const R = race; if (!R) return;
-  const r = R.rivals.find(x => x.net);
-  if (r && !r.left) { const s = netSample(NET.buf, performance.now() - NET_DELAY, m => m); if (s) puppet(r.kt, s); }
+  const tq = performance.now() - NET_DELAY;
+  for (const r of R.rivals) if (r.net && !r.left) { const s = netSample(NET.bufs.get(r.pid), tq, asIs); if (s) puppet(r.kt, s); }
   rivalsStep();
 }
 function netGuestStep() {
   const R = race; if (!R) return;
-  const tq = performance.now() - NET_DELAY;
+  const tq = performance.now() - NET_DELAY, t = R.state === 'grid' ? 0 : simT - R.t0;
   for (const r of R.rivals) {
-    const s = r.net ? (r.left ? null : netSample(NET.buf, tq, m => m)) : netSample(NET.aiBuf, tq, m => { const v = m.r[r.ai]; return v ? { x: v[0], y: v[1], a: v[2], vx: v[3], vy: v[4], st: v[5], D: v[6], done: v[7], est: v[8] } : null; });
+    const s = r.net ? (r.left ? null : netSample(NET.bufs.get(r.pid), tq, asIs))
+                    : netSample(NET.aiBuf, tq, m => { const v = m.r[r.ai]; return v ? { x: v[0], y: v[1], a: v[2], vx: v[3], vy: v[4], st: v[5], D: v[6], done: v[7], est: v[8] } : null; });
     if (!s) continue;
     puppet(r.kt, s);
     r.x = s.x; r.y = s.y; r.a = s.a; r.vx = s.vx; r.vy = s.vy; r.vs = Math.hypot(s.vx, s.vy); r.D = s.D;
     if (!r.net) { r.done = !!s.done; r.estT = s.est; if (s.done) { r.finT = s.est; r.kt.ghost = true; } }
-    else if (!r.done) { const lap = TRACK.pace, t = R.state === 'grid' ? 0 : simT - R.t0; r.estT = t + Math.max(0, TRACK.LEN * R.laps - r.D) / (TRACK.LEN / lap); }
+    else if (!r.done) r.estT = t + Math.max(0, TRACK.LEN * R.laps - r.D) / (TRACK.LEN / TRACK.pace);
   }
   draftUpdate(R);
 }
 function netTick(now) {
   const tr = NET.tr; if (!tr) return;
-  if (now - NET.pingT > 1000) { NET.pingT = now; tr.send({ k: 'ping', t: now }); }
+  if (now - NET.pingT > 1000 || now < NET.pingT) { NET.pingT = now; if (NET.role === 'host') tr.broadcast({ k: 'ping', t: now }); else tr.send({ k: 'ping', t: now }); }
   if (!race || !race.net) return;
   if (now - NET.sendT >= 33) {
     NET.sendT = now;
     const D = LAP.cnt * TRACK.LEN + LAP.s, r3 = v => Math.round(v * 1000) / 1000;
-    tr.send({ k: 'st', x: r3(B.x), y: r3(B.y), a: r3(B.a), vx: r3(B.vx), vy: r3(B.vy), st: r3(B.steer || 0), D: r3(D), fin: race.myFin || 0, ab: race.myAb ? 1 : 0 });
+    const st = { k: 'st', x: r3(B.x), y: r3(B.y), a: r3(B.a), vx: r3(B.vx), vy: r3(B.vy), st: r3(B.steer || 0), D: r3(D), fin: race.myFin || 0, ab: race.myAb ? 1 : 0 };
+    if (NET.role === 'host') tr.broadcast(Object.assign(st, { id: 'h' })); else tr.send(st);
   }
-  if (NET.role === 'host' && now - NET.aiT >= 50) {
-    NET.aiT = now;
-    const ai = race.rivals.filter(r => !r.net), r2 = v => Math.round(v * 100) / 100;
-    if (ai.length) tr.send({ k: 'ai', r: ai.map(r => [r2(r.x), r2(r.y), r2(r.a), r2(r.vx), r2(r.vy), r2(r.kt.B.steer || 0), r2(r.D), r.done ? 1 : 0, r2(r.estT || 0)]) });
+  if (NET.role === 'host') {
+    if (now - NET.aiT >= 50) {
+      NET.aiT = now;
+      const arr = [], r2 = v => Math.round(v * 100) / 100;                   // ordenados por su número de IA, que es como los busca cada invitado
+      for (const r of race.rivals) if (!r.net) arr[r.ai] = [r2(r.x), r2(r.y), r2(r.a), r2(r.vx), r2(r.vy), r2(r.kt.B.steer || 0), r2(r.D), r.done ? 1 : 0, r2(isFinite(r.estT) ? r.estT : 0)];
+      if (arr.length) tr.broadcast({ k: 'ai', r: arr });
+    }
+    if (race.over && !race.final && race.rivals.every(r => r.done)) netHostFinal();
   }
-  if (UI === 'results' && NET.inRace && now - NET.resT > 1000) { NET.resT = now; netResults(); }
+  if (UI === 'results' && NET.inRace && !race.final && now - NET.resT > 1000) { NET.resT = now; netRender(); }
 }
-function netBeginRace(msg, isHost) {
+// clasificación de una carrera: la monta el anfitrión cuando han llegado todos (o se han ido) y la reparte
+function raceTable() {
+  const rows = race.rivals.map(r => ({ key: r.net ? 'p:' + r.pid : 'a:' + r.ai, name: r.name, color: r.color, kind: r.net ? 'online' : 'IA',
+    t: r.left || r.abandon ? null : (r.done ? r.finT : (isFinite(r.estT) ? r.estT : null)), st: r.left ? 'left' : r.abandon ? 'ab' : r.done ? 'fin' : 'run' }));
+  rows.push({ key: 'p:' + NET.me, name: myName(), color: playerColor(), kind: 'tú', t: race.myAb || race.finishT === null ? null : race.finishT, st: race.myAb ? 'ab' : race.over ? 'fin' : 'run', me: true });
+  rows.sort((a, b) => (a.t === null ? 1e9 : a.t) - (b.t === null ? 1e9 : b.t));
+  rows.forEach((x, k) => { x.pos = k + 1; });
+  return rows;
+}
+function netHostFinal() {
+  const rows = raceTable().map(x => { const o = Object.assign({}, x); delete o.me; return o; });
+  if (NET.gp) {
+    const g = NET.gp;
+    rows.forEach(x => { x.pts = x.t === null ? 0 : GP_POINTS[x.pos - 1] || 0; const e = g.table[x.key] || (g.table[x.key] = { name: x.name, color: x.color, kind: x.kind === 'tú' ? 'online' : x.kind, pts: 0 }); e.pts += x.pts; e.name = x.name; e.color = x.color; });
+    g.done = g.race + 1;
+  }
+  race.final = rows;
+  NET.tr.broadcast({ k: 'res', rows, gp: NET.gp });
+  netRender();
+}
+function cupTracks(cupId) {
+  const c = CUPS.find(x => x.id === cupId) || CUPS[0];
+  if (c.tracks) return c.tracks.slice();
+  const b = SEASON_BASES.slice().sort(() => Math.random() - .5).slice(0, 4);
+  return b.map(id => Math.random() < .5 ? id : id + '_r');
+}
+function netBeginRace(msg) {
   quickEnd(); leaveRace();
-  const cfg = Object.assign({}, NET.cfg, msg.cfg), real = GS;
+  const cfg = Object.assign({}, NET.cfg, msg.cfg), real = GS, isHost = NET.role === 'host';
   const st = newState({ rp: real.rp, bestLaps: real.bestLaps, stats: { champs: 0, wins: 0, podiums: 0, races: 0, bankruptcies: 0 }, diff: cfg.diff, color: real.color, assist: real.assist });
   st.parts.chasis = newPart('chasis', 'ch_alquiler'); st.parts.motor = newPart('motor', 'm_std', { health: 1 });
-  st.parts.neumaticos = newPart('neumaticos', BOX_TYRES.includes(cfg.tyre) ? cfg.tyre : 'n_medios'); st.parts.frenos = newPart('frenos', 'f_discos', { health: 1 }); st.parts.cadena = newPart('cadena', 'cadena', { health: 1 });
+  st.parts.neumaticos = newPart('neumaticos', NET.myTyre); st.parts.frenos = newPart('frenos', 'f_discos', { health: 1 }); st.parts.cadena = newPart('cadena', 'cadena', { health: 1 });
   st.money = 0; st.champ = 1; st.fuel = 'normal'; st.gear = 'estandar';
+  const me = pById(NET.me); if (me) st.color = me.color;
   const pts = { 'Tú': 0 }; RIVALS.forEach(r => { pts[r.name] = 0; });
-  const laps = cfg.laps === 10 ? 10 : 3;
-  st.season = { race: 0, pts, results: [], tracks: [trackById(cfg.track) ? cfg.track : 'parque'], form: RIVALS.map(() => 1), laps };
+  const laps = cfg.laps === 10 ? 10 : cfg.laps === 5 ? 5 : 3;
+  st.season = { race: 0, pts, results: [], tracks: [trackById(msg.track) ? msg.track : 'parque'], form: RIVALS.map(() => 1), laps };
   QUICK = { real, net: true }; GS = st;
   enterTrack();
-  let ai = cfg.ai ? makeRivals(TRACK, cfg.diff, null, laps, Math.random, 1).slice(0, 4) : [];
-  if (!isHost && msg.ai) ai = ai.slice(0, msg.ai.length).map((r, k) => Object.assign(r, { name: String(msg.ai[k].name).slice(0, 14), color: msg.ai[k].color }));
-  ai.forEach((r, k) => { r.ai = k; });
-  const remote = { name: NET.peer.name || 'Amigo', color: NET.peer.color, i: 9, net: true, lt: Array(laps).fill(TRACK.pace), d0: 6, lane: 0, tgt: 0, latOff: 0, latV: 0, lagT: 0, dV: 0, hold: 0 };
-  const rivals = ai.concat([remote]);
-  const slot = cfg.ai ? (isHost ? 4 : 5) : (isHost ? 0 : 1);
-  assignGrid(rivals, slot, rivals.map((_, k) => k));
+  const aiMade = makeRivals(TRACK, cfg.diff, null, laps, Math.random, 1);
+  // parrilla: la decide el anfitrión (msg.grid, del primero al último) y todos la montan igual
+  const rivals = [], slotOf = {};
+  msg.grid.forEach((g, slot) => {
+    if (g.type === 'p' && g.id === NET.me) { slotOf.me = slot; return; }
+    let r;
+    if (g.type === 'ai') r = Object.assign(aiMade[g.ai % aiMade.length], { name: String(g.name).slice(0, 14), color: g.color, ai: g.ai });
+    else r = { name: String(g.name).slice(0, 14), color: g.color, i: 9, net: true, pid: g.id, lt: Array(laps).fill(TRACK.pace), d0: 6, lane: 0, tgt: 0, latOff: 0, latV: 0, lagT: 0, dV: 0, hold: 0 };
+    r.slot = slot; rivals.push(r);
+  });
+  const slot = slotOf.me === undefined ? msg.grid.length : slotOf.me;
+  rivals.forEach(r => { r.d0 = 6 + 5 * r.slot; r.lane = r.tgt = r.latOff = (r.slot % 2 ? 1 : -1) * 1.4; });
   race = { state: 'grid', cd: 3 - (isHost ? 0 : Math.min(.4, NET.rtt / 2000)), t0: 0, t: 0, laps, mult: 1, slot, rivals, block: true, finishT: null, fuelCost: 0, fuel: 'normal', pos: slot + 1, over: false,
-           contacts: 0, pHint: -1, look: 'alquiler', tyreBefore: GS.parts.neumaticos.wear.slice(), net: true, netLive: true };
+           contacts: 0, pHint: -1, look: 'alquiler', tyreBefore: GS.parts.neumaticos.wear.slice(), net: true, netLive: true, gpRace: msg.gp ? msg.gp.race : null };
   reset(slot); SMK.length = 0; ACC.eng = ACC.brk = ACC.chn = 0;
   setupRaceKarts(race);
-  NET.buf.length = 0; NET.aiBuf.length = 0; NET.inRace = true;
+  NET.bufs.clear(); NET.aiBuf.length = 0; NET.inRace = true; NET.ready = false;
   stepHook = isHost ? netHostStep : netGuestStep; draftK = 0;
   if (isHost) rivalsStep();
   $('#setupName').textContent = catOf('chasis', 'ch_alquiler').name;
   show('play');
 }
-function netHostStart() {
-  if (!NET.peer.on) return;
-  const ai = NET.cfg.ai ? RIVALS.slice(0, 4).map(r => ({ name: r.name, color: r.color })) : [];
-  NET.tr.send({ k: 'start', cfg: NET.cfg, ai });
-  netBeginRace({ cfg: NET.cfg, ai }, true);
+// el anfitrión arranca: carrera suelta, primera del GP o siguiente del GP
+function netHostStart(next) {
+  const humans = NET.players.slice();
+  if (!next) {
+    NET.gp = NET.cfg.mode === 'gp' ? { cup: NET.cfg.cup, cupName: (CUPS.find(c => c.id === NET.cfg.cup) || CUPS[0]).name, tracks: cupTracks(NET.cfg.cup), race: 0, table: {}, done: 0 } : null;
+  } else if (NET.gp) NET.gp.race++;
+  const nAI = NET.cfg.ai ? Math.min(4, 8 - humans.length) : 0;
+  let grid = [];
+  for (let k = 0; k < nAI; k++) grid.push({ type: 'ai', ai: k, name: RIVALS[k].name, color: RIVALS[k].color, key: 'a:' + k });
+  for (const p of humans) grid.push({ type: 'p', id: p.id, name: p.name, color: p.color, key: 'p:' + p.id });
+  // en el GP, a partir de la segunda carrera sale primero el que menos puntos lleva (como en Mario Kart)
+  if (NET.gp && NET.gp.race > 0) { const pts = k => (NET.gp.table[k] || { pts: 0 }).pts; grid.sort((a, b) => pts(a.key) - pts(b.key)); }
+  const track = NET.gp ? NET.gp.tracks[NET.gp.race] : NET.cfg.track;
+  const msg = { k: 'start', cfg: NET.cfg, grid, track, gp: NET.gp };
+  NET.players.forEach(p => { if (!p.host) p.ready = false; });
+  NET.tr.broadcast(msg);
+  netBeginRace(msg);
 }
 function netFinish(abandon) {
   race.myFin = abandon ? 0 : race.finishT; race.myAb = !!abandon;
-  netTick(performance.now() + 1e6);                  // que el otro se entere ya
-  NET.resT = 0; netResults(); show('results');
-}
-function netResults() {
-  if (!race || !race.net) return;
-  const rows = race.rivals.map(r => ({ r, name: r.name, color: r.color, t: r.left || r.abandon ? Infinity : (r.estT !== null && r.estT !== undefined ? r.estT : rivalFinish(r)) }));
-  rows.push({ player: true, name: myName(), color: playerColor(), t: race.myAb || race.finishT === null ? Infinity : race.finishT });
-  rows.sort((a, b) => a.t - b.t); rows.forEach((x, k) => { x.pos = k + 1; });
-  const me = rows.find(x => x.player), allDone = race.rivals.every(r => r.done);
-  const timeTxt = x => x.player ? (race.myAb ? 'abandono' : fmt(x.t)) : x.r.left ? 'desconectado' : x.r.abandon ? 'abandono' : x.r.done ? fmt(x.t) : 'en carrera…';
-  $('#resBody').innerHTML = `<h2>${race.myAb ? 'Has abandonado' : me.pos === 1 ? '¡Victoria!' : me.pos + '.º puesto'} en ${TRACK.name}</h2>` +
-    `<table class="tbl"><thead><tr><th scope="col">Pos.</th><th scope="col">Piloto</th><th scope="col">Tiempo</th></tr></thead><tbody>${rows.map(x =>
-      `<tr class="${x.player ? 'me' : ''}"><td>${x.pos}</td><td><i class="dot" style="background:${x.color}"></i>${esc(x.name)}${x.player ? ' (tú)' : x.r.net ? ' (online)' : ' (IA)'}</td><td>${timeTxt(x)}</td></tr>`).join('')}</tbody></table>` +
-    `<p class="dim">${allDone ? 'Han llegado todos.' : 'La carrera sigue: la tabla se actualiza sola.'}${NET.peer.on ? ' Conexión: ' + Math.round(NET.rtt) + ' ms de ida y vuelta.' : ' ' + esc(NET.status)}</p>` +
-    `<div class="btns">${NET.role === 'host' ? `<button class="btn pri big2" data-n="tolobby">Volver a la sala</button>` : `<button class="btn big2" disabled>Esperando al anfitrión…</button>`}<button class="btn big2" data-n="leave">Salir</button></div>`;
+  NET.sendT = -1e9; netTick(performance.now());          // que los demás se enteren ya
+  NET.resT = 0; netRender(); show('results');
 }
 function netToLobby() {
-  if (NET.role === 'host' && NET.tr) NET.tr.send({ k: 'lobby' });
-  leaveRace(); quickEnd(); NET.inRace = false; MODE = 'menu'; document.body.dataset.mode = 'menu';
-  netLobby();
+  if (NET.role === 'host' && NET.tr) { NET.gp = null; NET.tr.broadcast({ k: 'lobby', gp: null }); }
+  leaveRace(); quickEnd(); NET.inRace = false; NET.ready = false; MODE = 'menu'; document.body.dataset.mode = 'menu';
+  netRender();
 }
-function netLobby() {
-  const T = trackById(NET.cfg.track) || TRACKS[0], host = NET.role === 'host', c = NET.cfg;
-  let h = `<h2>Online, 2 jugadores</h2>`;
+function netNext() {                                                       // el anfitrión: siguiente carrera del GP o vuelta a la sala
+  if (NET.gp && NET.gp.race < NET.gp.tracks.length - 1) { leaveRace(); quickEnd(); netHostStart(true); }
+  else netToLobby();
+}
+/* ---------- pantallas ---------- */
+const diffName = d => ({ facil: 'fáciles', normal: 'normales', dificil: 'difíciles', experto: 'expertos' })[d] || d;
+const cap = s => s[0].toUpperCase() + s.slice(1);
+function playersHtml(showReady) {
+  return `<ul class="netpl">${NET.players.map(p => `<li><i class="dot" style="background:${p.color}"></i><b>${esc(p.name)}</b>${p.id === NET.me ? ' <em>(tú)</em>' : ''}${p.host ? ' <em>anfitrión</em>' : ''}` +
+    `<span>${showReady && !p.host ? (p.ready ? 'listo' : 'esperando') : ''}${p.rtt && p.id !== NET.me ? ' · ' + Math.round(p.rtt) + ' ms' : ''}</span></li>`).join('')}</ul>`;
+}
+function tyrePick() {
+  return `<h4>Tus neumáticos</h4>` + radios('nmytyre', BOX_TYRES.map(id => ({ id, name: cap(catOf('neumaticos', id).name.replace('Neumáticos ', '')) })), NET.myTyre, 'Tus neumáticos');
+}
+function gpTableHtml(g, final) {
+  const rows = Object.entries(g.table).map(([k, e]) => Object.assign({ k }, e)).sort((a, b) => b.pts - a.pts);
+  return `<h3>${esc(g.cupName)}: ${final ? 'clasificación final' : 'general tras ' + g.done + ' de ' + g.tracks.length}</h3>` +
+    `<table class="tbl"><thead><tr><th scope="col">Pos.</th><th scope="col">Piloto</th><th scope="col">Puntos</th></tr></thead><tbody>${rows.map((e, i) =>
+      `<tr class="${e.k === 'p:' + NET.me ? 'me' : ''}"><td>${final && i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td><i class="dot" style="background:${e.color}"></i>${esc(e.name)}${e.kind === 'IA' ? ' (IA)' : ''}</td><td>${e.pts}</td></tr>`).join('')}</tbody></table>`;
+}
+function netRender() {
+  if (NET.inRace && race && race.net) return netResults();
+  const host = NET.role === 'host', c = NET.cfg;
+  let h = `<h2>Online, hasta ${NET_MAX} jugadores</h2>`;
   if (!NET.on && window.claude && !window.__netRelay) {
     h += `<p>Dentro de claude.ai las conexiones directas entre navegadores están bloqueadas, así que el online solo funciona en la web del juego:</p>` +
-      `<p><a href="https://vreguera.github.io/karting-rpg/" target="_blank" rel="noopener"><b>vreguera.github.io/karting-rpg</b></a></p>` +
-      `<div class="btns"><button class="btn big2" data-n="leave">Volver</button></div>`;
+      `<p><a href="https://vreguera.github.io/karting-rpg/" target="_blank" rel="noopener"><b>vreguera.github.io/karting-rpg</b></a></p><div class="btns"><button class="btn big2" data-n="leave">Volver</button></div>`;
   } else if (!NET.on) {
-    h += `<p>Uno de los dos crea la partida y le pasa el código de 4 letras al otro. La conexión va directa entre vuestros navegadores.</p>` +
+    h += `<p>Uno crea la partida y pasa el código de 4 letras a los demás. La conexión va directa entre vuestros navegadores.</p>` +
       `<label class="fld">Tu nombre <input type="text" id="nnick" data-n="nick" maxlength="14" value="${esc(NAMES.me)}" placeholder="Jugador"></label>` +
       `<div class="btns"><button class="btn pri big2" data-n="host">Crear partida</button></div>` +
-      `<label class="fld">Código de tu amigo <input type="text" id="ncode" data-n="code" maxlength="4" autocomplete="off" style="text-transform:uppercase;width:6em" placeholder="ABCD"></label>` +
-      `<div class="btns"><button class="btn big2" data-n="join">Unirme</button></div>` +
+      `<label class="fld">Código <input type="text" id="ncode" data-n="code" maxlength="4" autocomplete="off" style="text-transform:uppercase;width:6em" placeholder="ABCD"></label>` +
+      `<div class="btns"><button class="btn big2" data-n="join">Unirme</button><button class="btn big2" data-n="leave">Volver</button></div>` +
       (NET.status ? `<p class="msg warn">${esc(NET.status)}</p>` : '');
   } else {
-    h += host ? `<p class="kick">Código de la partida</p><p style="font:400 56px/1 var(--f-num);letter-spacing:.12em">${NET.code}</p>` : `<p class="kick">Partida ${NET.code}</p>`;
-    h += `<p class="msg">${esc(NET.status)}${NET.peer.on && NET.rtt ? ' · ' + Math.round(NET.rtt) + ' ms' : ''}</p>`;
-    h += `<div class="card board" style="padding:10px 12px;margin:10px 0"><div class="bhead">${trackSvg(T, 200, 116, 'tbig')}<div><h3>${T.name}</h3><p>${c.laps} vueltas · ${catOf('neumaticos', c.tyre).name.toLowerCase()} · ${c.ai ? '4 rivales de la IA (' + ({ facil: 'fáciles', normal: 'normales', dificil: 'difíciles', experto: 'expertos' })[c.diff] + ')' : 'sin rivales de la IA'}</p></div></div></div>`;
+    h += `<p class="kick">Código de la partida</p><p class="netcode">${NET.code}</p>`;
+    h += `<p class="msg">${esc(NET.status)}${!host && NET.rtt ? ' · ' + Math.round(NET.rtt) + ' ms' : ''}</p>`;
+    h += playersHtml(true);
+    const cupObj = CUPS.find(x => x.id === c.cup) || CUPS[0], T = trackById(c.track) || TRACKS[0];
+    const what = c.mode === 'gp' ? `<b>${esc(cupObj.name)}</b>: ${cupObj.tracks ? cupObj.tracks.map(id => trackById(id).name).join(', ') : '4 circuitos sorteados'}` : `<b>${esc(T.name)}</b>`;
+    h += `<p>${what} · ${c.laps} vueltas · ${c.ai ? 'rivales de la IA ' + diffName(c.diff) + ' hasta completar 8' : 'sin rivales de la IA'}</p>`;
     if (host) {
       const diffs = [['facil', 'Fáciles'], ['normal', 'Normales'], ['dificil', 'Difíciles'], ['experto', 'Expertos']];
-      h += `<label class="fld">Circuito <select data-n="track">${TRACKS.map(t => `<option value="${t.id}"${t.id === T.id ? ' selected' : ''}>${t.name}${t.country ? ' (' + t.country + ')' : ''}</option>`).join('')}</select></label>` +
-        radios('nlaps', [{ id: '3', name: '3 vueltas' }, { id: '10', name: '10 vueltas' }], String(c.laps), 'Vueltas') +
-        radios('ntyre', BOX_TYRES.map(id => ({ id, name: (n => n[0].toUpperCase() + n.slice(1))(catOf('neumaticos', id).name.replace('Neumáticos ', '')) })), c.tyre, 'Neumáticos') +
-        `<label class="fld">Rivales de la IA <select data-n="ai"><option value="0"${c.ai ? '' : ' selected'}>Sin rivales, solo vosotros</option>${diffs.map(d => `<option value="${d[0]}"${c.ai && c.diff === d[0] ? ' selected' : ''}>4 rivales ${d[1].toLowerCase()}</option>`).join('')}</select></label>` +
-        `<div class="btns"><button class="btn pri big2" data-n="start"${NET.peer.on ? '' : ' disabled'}>Empezar carrera</button><button class="btn big2" data-n="leave">Salir</button></div>`;
-    } else h += `<div class="btns"><button class="btn big2" data-n="leave">Salir</button></div>`;
+      h += radios('nmode', [{ id: 'race', name: 'Carrera suelta' }, { id: 'gp', name: 'Grand Prix', sub: '4 carreras, puntos' }], c.mode, 'Modo') +
+        (c.mode === 'gp' ? `<label class="fld">Copa <select data-n="cup">${CUPS.map(x => `<option value="${x.id}"${x.id === c.cup ? ' selected' : ''}>${x.name}</option>`).join('')}</select></label>`
+                         : `<label class="fld">Circuito <select data-n="track">${TRACKS.map(t => `<option value="${t.id}"${t.id === c.track ? ' selected' : ''}>${t.name}${t.country ? ' (' + t.country + ')' : ''}</option>`).join('')}</select></label>`) +
+        radios('nlaps', [{ id: '3', name: '3 vueltas' }, { id: '5', name: '5 vueltas' }, { id: '10', name: '10 vueltas' }], String(c.laps), 'Vueltas') +
+        `<label class="fld">Rivales de la IA <select data-n="ai"><option value="0"${c.ai ? '' : ' selected'}>Sin rivales, solo vosotros</option>${diffs.map(d => `<option value="${d[0]}"${c.ai && c.diff === d[0] ? ' selected' : ''}>${d[1]}</option>`).join('')}</select></label>`;
+    }
+    h += tyrePick();
+    const allReady = NET.players.every(p => p.host || p.ready);
+    if (host) h += `<div class="btns"><button class="btn pri big2" data-n="start"${allReady ? '' : ' disabled'}>${c.mode === 'gp' ? 'Empezar el Grand Prix' : 'Empezar carrera'}</button><button class="btn big2" data-n="leave">Cerrar la partida</button></div>` +
+      (allReady ? '' : `<p class="dim">Esperando a que todos marquen «Listo».</p>`);
+    else h += `<div class="btns"><button class="btn pri big2" data-n="ready">${NET.ready ? 'Listo ✓ (pulsa para quitar)' : 'Listo'}</button><button class="btn big2" data-n="leave">Salir</button></div>`;
   }
-  h += `<p class="dim">Los dos corréis con el kart de alquiler. Si la conexión no arranca, prueba con otra wifi o con los datos del móvil: algunas redes la bloquean.</p>`;
+  h += `<p class="dim">Todos con el kart de alquiler; cada uno elige sus neumáticos. Si la conexión no arranca, probad con otra wifi o con los datos del móvil: algunas redes la bloquean.</p>`;
   $('#resBody').innerHTML = h;
   if (UI !== 'results') show('results');
 }
-function netCfgChanged() { try { localStorage.setItem('krpg_netcfg', JSON.stringify(NET.cfg)); } catch (e) {} if (NET.on && NET.role === 'host' && NET.tr) NET.tr.send({ k: 'cfg', cfg: NET.cfg }); netLobby(); }
+function netResults() {
+  const fin = race.final, rows = fin || raceTable(), g = NET.gp, last = g && g.race >= g.tracks.length - 1;
+  const me = rows.find(x => x.key === 'p:' + NET.me);
+  const tt = x => x.st === 'left' ? 'se fue' : x.st === 'ab' ? 'abandono' : x.t === null ? '—' : (x.st === 'run' && !fin ? '≈ ' : '') + fmt(x.t);
+  let h = `<h2>${g ? esc(g.cupName) + ' · carrera ' + (g.race + 1) + ' de ' + g.tracks.length + ': ' : ''}${race.myAb ? 'abandonas' : me && me.pos === 1 && fin ? '¡ganas!' : me ? me.pos + '.º' + (fin ? '' : ' (provisional)') : ''} en ${TRACK.name}</h2>`;
+  h += `<table class="tbl"><thead><tr><th scope="col">Pos.</th><th scope="col">Piloto</th><th scope="col">Tiempo</th>${fin && g ? '<th scope="col">Puntos</th>' : ''}</tr></thead><tbody>${rows.map(x =>
+    `<tr class="${x.key === 'p:' + NET.me ? 'me' : ''}"><td>${x.pos}</td><td><i class="dot" style="background:${x.color}"></i>${esc(x.name)}${x.key === 'p:' + NET.me ? ' (tú)' : ' (' + (x.kind === 'tú' ? 'online' : x.kind) + ')'}</td><td>${tt(x)}</td>${fin && g ? '<td>+' + (x.pts || 0) + '</td>' : ''}</tr>`).join('')}</tbody></table>`;
+  if (!fin) h += `<p class="dim">La carrera sigue: la tabla se actualiza sola hasta que lleguen todos.</p>`;
+  if (fin && g) h += gpTableHtml(g, last);
+  if (NET.role === 'host') {
+    const allReady = NET.players.every(p => p.host || p.ready);
+    h += playersHtml(true);
+    h += fin ? `<div class="btns"><button class="btn pri big2" data-n="next"${allReady ? '' : ' disabled'}>${g && !last ? 'Siguiente carrera: ' + trackById(g.tracks[g.race + 1]).name : 'Volver a la sala'}</button><button class="btn big2" data-n="leave">Cerrar la partida</button></div>` +
+               (allReady ? '' : `<p class="dim">Esperando a que todos marquen «Listo».</p>`)
+             : `<div class="btns"><button class="btn big2" data-n="leave">Cerrar la partida</button></div>`;
+    if (fin && g && !last) h += tyrePick();
+  } else {
+    if (fin && g && !last) h += tyrePick();
+    h += `<div class="btns">${fin ? `<button class="btn pri big2" data-n="ready">${NET.ready ? 'Listo ✓' : 'Listo para seguir'}</button>` : ''}<button class="btn big2" data-n="leave">Salir</button></div>`;
+  }
+  $('#resBody').innerHTML = h;
+}
+function netCfgChanged() { try { localStorage.setItem('krpg_netcfg', JSON.stringify(NET.cfg)); } catch (e) {} if (NET.on && NET.role === 'host' && NET.tr) NET.tr.broadcast({ k: 'cfg', cfg: NET.cfg }); netRender(); }
 $('#resBody').addEventListener('click', e => {
   const b = e.target.closest('button[data-n]'); if (!b) return;
   const a = b.dataset.n;
   if (a === 'host') netStart('host');
-  else if (a === 'join') { const v = ($('#ncode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (v.length !== 4) { NET.status = 'El código tiene 4 letras o números.'; netLobby(); return; } netStart('guest', v); }
-  else if (a === 'start') netHostStart();
-  else if (a === 'tolobby') netToLobby();
+  else if (a === 'join') { const v = ($('#ncode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (v.length !== 4) { NET.status = 'El código tiene 4 letras o números.'; netRender(); return; } netStart('guest', v); }
+  else if (a === 'start') netHostStart(false);
+  else if (a === 'next') netNext();
+  else if (a === 'ready') { NET.ready = !NET.ready; NET.tr && NET.tr.send({ k: 'ready', v: NET.ready }); const me = pById(NET.me); if (me) me.ready = NET.ready; netRender(); }
   else if (a === 'leave') { netClose(); NET.status = ''; goMenu(); }
 });
 $('#resBody').addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.n === 'nick') { NAMES.me = t.value.trim().slice(0, 14); try { localStorage.setItem('krpg_names', JSON.stringify(NAMES)); } catch (er) {} return; }
+  if (t.name === 'nmytyre') { NET.myTyre = t.value; try { localStorage.setItem('krpg_nettyre', t.value); } catch (er) {} return; }
   if (!NET.on || NET.role !== 'host') return;
   if (t.dataset.n === 'track') NET.cfg.track = t.value;
+  else if (t.dataset.n === 'cup') NET.cfg.cup = t.value;
   else if (t.dataset.n === 'ai') { NET.cfg.ai = t.value !== '0'; if (NET.cfg.ai) NET.cfg.diff = t.value; }
   else if (t.name === 'nlaps') NET.cfg.laps = +t.value;
-  else if (t.name === 'ntyre') NET.cfg.tyre = t.value;
+  else if (t.name === 'nmode') NET.cfg.mode = t.value;
   else return;
   netCfgChanged();
 });
-$('#btnOnline').addEventListener('click', () => { quickEnd(); leaveRace(); MODE = 'menu'; NET.status = ''; netLobby(); });
+$('#btnOnline').addEventListener('click', () => { quickEnd(); leaveRace(); MODE = 'menu'; NET.status = ''; netRender(); });
 
 /* ---------- carrera rápida ---------- */
 // Usa todo el flujo del campeonato con un estado de juego temporal (kart de alquiler, una sola carrera) que no se guarda;
