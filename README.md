@@ -1,0 +1,15 @@
+# Karting RPG
+
+Roguelite de karts en vista cenital, en un solo archivo HTML (canvas 2D, sin dependencias).
+
+- **Campeonato**: cuatro carreras por campeonato (la última, de 10 vueltas), clasificación a dos vueltas, piezas que se gastan, tienda, boxes y almacén de neumáticos.
+- **Carrera rápida**: circuito, neumáticos, vueltas y nivel a elegir, con el kart de alquiler para todos.
+- **Pruebas libres**: todos los circuitos y setups, con los ajustes de física.
+- Rivales con física real e IA que conduce al límite por un trazado de carreras calculado para cada circuito.
+- Sonido sintetizado en el navegador y circuitos con público, boxes, comisarios y pancartas.
+
+## Jugar
+
+Abre `index.html` en el navegador, o la web publicada con GitHub Pages.
+
+Controles: flechas o WASD, espacio para saltar y derrapar, o mando (stick, RT, LT, RB).
