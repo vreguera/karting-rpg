@@ -629,6 +629,7 @@ svg.flag { flex: none; width: 18px; height: 12px; box-shadow: 0 0 0 1.5px var(--
         <div class="tmenu">
           <button class="btn big pri" id="btnChamp"><span class="bt">Campeonato</span><span class="bs" id="champSub"></span></button>
           <button class="btn big" id="btnOnline"><span class="bt">Online con amigos</span><span class="bs">Hasta 4 jugadores por internet: carreras sueltas o Grand Prix de 4 circuitos con puntos.</span></button>
+          <button class="btn big" id="btnCoop"><span class="bt">Cooperativo, 2 jugadores</span><span class="bs">Una run para los dos: cada uno con su garaje y su dinero, en los mismos campeonatos.</span></button>
           <button class="btn big" id="btnQuick"><span class="bt">Carrera rápida</span><span class="bs">Eliges circuito, neumáticos y vueltas; kart de alquiler para todos. No toca tu partida.</span></button>
           <button class="btn big" id="btnFree"><span class="bt">Pruebas libres</span><span class="bs">Todos los circuitos y setups, con los ajustes de física. Sin dinero ni rivales.</span></button>
         </div>
@@ -2801,7 +2802,7 @@ function drawRivals() {
     if (r.x === undefined) continue;
     ctx.save(); worldXf(); ctx.translate(r.x, r.y); ctx.rotate(r.a); ctx.globalAlpha = r.done ? .4 : race.quali ? .55 : 1;
     const kt = r.kt;
-    drawKartModel(ctx, look, r.color, kt ? { steer: kt.B.steer, ang: kt.tyre.map(d => d.ang), helmet: KC.white } : { steer: 0, helmet: KC.white });
+    drawKartModel(ctx, r.mlook || look, r.color, kt ? { steer: kt.B.steer, ang: kt.tyre.map(d => d.ang), helmet: KC.white } : { steer: 0, helmet: KC.white });
     ctx.restore();
     if (r.net) {
       ctx.save(); worldXf(); ctx.font = '800 .95px "Barlow Condensed", Barlow, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -3295,7 +3296,7 @@ function frame(ts) {
   pollPad();
   const dt = Math.min(.1, (ts - last) / 1000); last = ts;
   if (UI === 'menu' || UI === 'garage') { acc = 0; audioUpdate(0, 0); requestAnimationFrame(frame); return; }
-  if (PAUSED && !(race && race.net)) acc = 0;
+  if (PAUSED && !(race && (race.net || race.coop))) acc = 0;
   else {
     acc += dt;
     while (acc >= DT) { step(); lapUpdate(); acc -= DT; }
@@ -3303,6 +3304,7 @@ function frame(ts) {
   }
   const hitJ = bumpJ; lifeUpdate(PAUSED ? 0 : dt); audioUpdate(PAUSED ? 0 : dt, hitJ);
   if (NET.on) netTick(performance.now());
+  if (COOP.tr) coopTick(performance.now());
   updateCam(PAUSED ? 0 : dt); smokeUpdate(PAUSED ? 0 : dt); draw(); teleUpdate(); drawMini(); lapHud(); drawSlip(); drawSpeedo(); drawWear(); raceHud();
   const v = Math.round(Math.hypot(B.vx, B.vy) * 3.6);
   if (v !== lastSpd) { $('#spd').textContent = v; lastSpd = v; }
@@ -3368,7 +3370,7 @@ function navBack() {
   if (OPTS.open) { closeOpts(); return; }
   if (PAUSED) { setPause(false); return; }
   const scr = navScreen(); if (!scr) return;
-  const b = UI === 'garage' ? scr.querySelector('[data-act="menu"]') : UI === 'results' ? scr.querySelector('#resNext, #resGarage, #qkMenu, [data-q="menu"], [data-n="leave"]') : null;
+  const b = UI === 'garage' ? scr.querySelector('[data-act="menu"]') : UI === 'results' ? scr.querySelector('#resNext, #resGarage, #qkMenu, [data-q="menu"], [data-n="leave"], [data-c="leave"]') : null;
   if (b) navPress(b);
 }
 function navTab(d) {
@@ -3758,7 +3760,7 @@ function loadG() {
   } catch (e) {}
   return null;
 }
-function saveG() { if (QUICK) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(GS)); } catch (e) {} }
+function saveG() { if (QUICK && !QUICK.coop) return; try { localStorage.setItem(QUICK ? COOP_KEY : SAVE_KEY, JSON.stringify(GS)); } catch (e) {} }
 const eur = n => Math.round(n).toLocaleString('es-ES') + ' €';
 const pct = f => Math.round(f * 100) + ' %';
 const lossTxt = d => d < .005 ? 'casi nada' : '−' + pct(d);
@@ -3811,7 +3813,7 @@ function renderMenu() {
   drawPreviews();
 }
 function goMenu() {
-  if (NET.on) netClose(); quickEnd(); leaveRace(); MODE = 'menu'; document.body.dataset.mode = 'menu';
+  if (NET.on) netClose(); coopLeave(); quickEnd(); leaveRace(); MODE = 'menu'; document.body.dataset.mode = 'menu';
   renderMenu(); show('menu');
 }
 
@@ -3983,6 +3985,7 @@ function renderGarage() {
   $('#gFoot').innerHTML = foot;
   $('#garageBody').innerHTML = (GS.msg ? `<div class="msg" role="status">${esc(GS.msg)}</div>` : '') +
     `<div class="cols ${sn ? 'boxes' : 'garage'}"><div class="ca">${A}</div><div class="cb">${Bc}</div><div class="cc">${C}</div></div>`;
+  if (COOP.on) coopDecorateGarage();
   ['ca', 'cb', 'cc'].forEach((c, i) => { $('#garageBody .' + c).scrollTop = keep[i]; });
   drawPreviews();
 }
@@ -4017,6 +4020,7 @@ $('#scr-garage').addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   const a = b.dataset.act, c = b.dataset.cat, i = +b.dataset.i; let r = null;
   if (a !== 'newrun' && a !== 'retire') pendingConfirm = null;
+  if (COOP.on && coopGarageAct(a)) return;
   if (a === 'tab') { shopTab = b.dataset.tab; renderGarage(); const t = $('#tab-' + shopTab); if (t) t.focus(); return; }
   if (a === 'tabprev' || a === 'tabnext') {
     const i = CATS.indexOf(shopTab); shopTab = CATS[(i + (a === 'tabnext' ? 1 : CATS.length - 1)) % CATS.length];
@@ -4089,6 +4093,7 @@ function qualiRows(R) {
   return rows;
 }
 function finishQuali() {
+  if (race.coop) { coopQualiDone(); return; }
   const R = race; if (R.over) return; R.over = true; R.block = true;
   qualiFastForward(R);
   for (const r of R.rivals) if (!r.qLaps.length) r.qLaps.push(r.qLap * 1.02);   // no le dio tiempo (pasa si terminas muy pronto)
@@ -4162,6 +4167,7 @@ function raceHud() {
 function finishRace(abandon) {
   if (race.over) return;
   if (race.net) { race.over = true; race.block = true; netFinish(abandon); return; }
+  if (race.coop) { race.over = true; race.block = true; coopRaceDone(abandon); return; }
   race.over = true; race.block = true;
   const rows = raceRows(race.rivals, abandon ? null : race.finishT), me = rows.find(r => r.player), sn = GS.season;
   const mult = race.mult || 1;
@@ -4713,6 +4719,437 @@ $('#resBody').addEventListener('change', e => {
 });
 $('#btnOnline').addEventListener('click', () => { quickEnd(); leaveRace(); MODE = 'menu'; NET.status = ''; netRender(); });
 
+/* ====================== COOPERATIVO, 2 JUGADORES ======================
+   Una run para dos, aparte de la de cada uno en solitario: cada jugador tiene su garaje, su dinero y sus piezas
+   (guardados en su navegador) y los dos corréis los mismos campeonatos contra 4 rivales de la IA. El anfitrión manda
+   en lo compartido (circuitos, nivel, puntos, el paso de una pantalla a otra) y conduce a la IA. Para avanzar, los dos
+   confirman: inscribirse, «Listo» en boxes (clasificación a la vez, como fantasmas), «Listo» para la carrera y para
+   seguir tras los resultados. Os podéis prestar dinero. */
+const COOP_KEY = 'kartrl_coop_v1';
+const COOP = { on: false, role: null, code: '', tr: null, mate: { name: '', color: '#888', on: false, ready: false, stage: '', money: 0, look: 'casero' },
+               ready: false, stage: 'garage', bufs: [], aiBuf: [], rtt: 0, sendT: 0, aiT: 0, pingT: 0, qbest: {}, status: '', fuelPaid: 0 };
+const coopMyKey = () => COOP.role === 'host' ? 'h' : 'g', coopMateKey = () => COOP.role === 'host' ? 'g' : 'h';
+function coopLoad() { try { const s = JSON.parse(localStorage.getItem(COOP_KEY) || 'null'); if (s && s.v === 2 && s.parts && s.coopId) { if (!s.tyreSets) s.tyreSets = []; return s; } } catch (e) {} return null; }
+function coopEnter(gs) { if (QUICK) quickEnd(); QUICK = { real: GS, coop: true }; GS = gs; saveG(); }
+function coopLeave() {
+  if (COOP.tr) try { coopSend({ k: 'bye' }); COOP.tr.close(); } catch (e) {}
+  COOP.tr = null; COOP.on = false; COOP.mate.on = false;
+  if (QUICK && QUICK.coop) { saveG(); GS = QUICK.real; QUICK = null; }
+}
+const coopName = sn => sn && sn.mateName ? sn.mateName : COOP.mate.name || 'Compañero';
+function coopKeyName(key) {
+  const sn = GS.season;
+  if (key === coopMyKey()) return 'Tú';
+  if (key === coopMateKey()) return coopName(sn);
+  return sn && sn.ai ? sn.ai[+key.slice(1)].name : key;
+}
+const coopNameKey = n => n === 'Tú' ? coopMyKey() : n === coopName(GS.season) ? coopMateKey() : 'a' + (GS.season.ai || []).findIndex(a => a.name === n);
+function coopStatus() {
+  if (!COOP.tr) return;
+  const st = { k: 'status', stage: COOP.stage, ready: COOP.ready, money: Math.round(GS.money), name: myName(), color: GS.color, look: catOf('chasis', GS.parts.chasis.id).look };
+  if (COOP.role === 'host') COOP.tr.broadcast(st); else COOP.tr.send(st);
+}
+function coopSend(o) { if (!COOP.tr) return; if (COOP.role === 'host') COOP.tr.broadcast(o); else COOP.tr.send(o); }
+// ---------- conexión ----------
+async function coopStart(role, code, fresh) {
+  if (role === 'host') {
+    let gs = fresh ? null : coopLoad();
+    if (!gs) { gs = newState({ color: GS.color, assist: GS.assist }); gs.coopId = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+    coopEnter(gs);
+  }
+  COOP.on = true; COOP.role = role; COOP.code = code || newCode(); COOP.mate = { name: '', color: '#888', on: false, ready: false, stage: '', money: 0, look: 'casero' };
+  COOP.ready = false; COOP.rtt = 0; COOP.status = role === 'host' ? 'Preparando la sala…' : 'Buscando la partida ' + COOP.code + '…';
+  coopRender();
+  try { COOP.tr = window.__netRelay ? relayTransport(COOP.code, role) : await peerTransport(COOP.code, role); }
+  catch (e) { COOP.status = 'No se pudo cargar la conexión online.'; COOP.on = false; coopRender(); return; }
+  const tr = COOP.tr;
+  tr.onerror = e => {
+    const t = e && e.type;
+    if (t === 'unavailable-id' && role === 'host') { try { tr.peer.destroy(); } catch (er) {} coopStart('host', null, false); return; }
+    COOP.status = t === 'peer-unavailable' ? 'No hay ninguna partida con el código ' + COOP.code + '.' : 'Error de conexión (' + (t || 'desconocido') + ').';
+    if (t === 'peer-unavailable') { COOP.on = false; try { tr.peer && tr.peer.destroy(); } catch (er) {} }
+    coopRender();
+  };
+  if (role === 'host') {
+    tr.onready = () => { COOP.status = 'Pasa este código a tu compañero.'; coopRender(); };
+    tr.onjoin = id => { if (COOP.mateId && COOP.mate.on) { tr.sendTo(id, { k: 'full' }); tr.drop(id); } };
+    tr.onleave = id => { if (id === COOP.mateId) coopMateLeft(); };
+    tr.onmsg = (id, o) => { if (!COOP.mateId || !COOP.mate.on) COOP.mateId = id; if (id === COOP.mateId) coopMsg(o); };
+  } else {
+    tr.onopen = () => { const mine = coopLoad(); tr.send({ k: 'hello', name: myName(), color: (mine || GS).color, runId: mine ? mine.coopId : null }); };
+    tr.onclose = () => { if (COOP.on) { COOP.status = 'Se ha cortado la conexión con el anfitrión. Tu progreso está guardado.'; coopLeave(); goMenu(); coopRender(); } };
+    tr.onmsg = o => coopMsg(o);
+  }
+}
+function coopMateLeft() {
+  COOP.mate.on = false; COOP.mate.ready = false; COOP.status = (COOP.mate.name || 'Tu compañero') + ' se ha desconectado. Puede volver con el mismo código.';
+  if (race && race.coop) { const r = race.rivals.find(x => x.net); if (r && !r.done) { r.done = true; r.left = true; r.finT = null; r.estT = Infinity; r.kt.ghost = true; } if (race.quali && COOP.qbest.g === undefined) { COOP.qbest.g = null; coopHostTryQres(); } }
+  coopRefresh();
+}
+// estado compartido que manda el anfitrión (al conectar y al volver)
+function coopShared() {
+  const sn = GS.season, s = { runId: GS.coopId, champ: GS.champ, diff: GS.diff, next: GS.next, stage: COOP.stage };
+  if (sn) { const pts = {}; for (const n in sn.pts) pts[coopNameKey(n)] = sn.pts[n]; s.season = { race: sn.race, tracks: sn.tracks, form: sn.form, ai: sn.ai, pts }; }
+  return s;
+}
+function coopApplyShared(s, color) {
+  let gs = coopLoad();
+  if (!gs || gs.coopId !== s.runId) { gs = newState({ color: GS.color, assist: GS.assist }); gs.coopId = s.runId; }
+  if (color) gs.color = color;
+  if (!QUICK || !QUICK.coop) coopEnter(gs); else GS = gs;
+  GS.champ = s.champ; GS.diff = s.diff; GS.next = s.next.slice();
+  if (s.season) {
+    const old = GS.season && GS.season.tracks.join() === s.season.tracks.join() ? GS.season : null;
+    const pts = {}; GS.season = { race: s.season.race, tracks: s.season.tracks.slice(), form: s.season.form, ai: s.season.ai, mateName: coopUnique(COOP.mate.name, s.season.ai), results: old ? old.results.slice(0, s.season.race) : [], pts };
+    for (const k in s.season.pts) pts[coopKeyName(k)] = s.season.pts[k];
+  } else GS.season = null;
+  saveG();
+  COOP.stage = GS.season ? 'boxes' : 'garage'; COOP.ready = false;
+  goGarage(); coopStatus();
+}
+function coopMsg(o) {
+  if (!o || typeof o.k !== 'string' || !COOP.tr) return;
+  const now = performance.now(), host = COOP.role === 'host';
+  switch (o.k) {
+    case 'hello':                                                                          // (anfitrión)
+      COOP.mate = Object.assign(COOP.mate, { name: String(o.name || 'Compañero').slice(0, 14), color: /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : '#1565c0', on: true, ready: false });
+      if (COOP.mate.color.toLowerCase() === GS.color.toLowerCase()) COOP.mate.color = GS.color.toLowerCase() === '#1565c0' ? '#2e7d32' : '#1565c0';
+      coopSetMateName(); saveG();
+      COOP.status = COOP.mate.name + ' está contigo.';
+      if (!race) { COOP.stage = GS.season ? 'boxes' : 'garage'; COOP.ready = false; }
+      COOP.tr.broadcast(Object.assign({ k: 'sync', hostName: myName(), hostColor: GS.color, mateColor: COOP.mate.color }, coopShared()));
+      if (UI === 'results' && !race) goGarage(); else coopRefresh();
+      coopStatus();
+      break;
+    case 'sync':                                                                           // (invitado)
+      COOP.mate = Object.assign(COOP.mate, { name: String(o.hostName || 'Anfitrión').slice(0, 14), color: o.hostColor || '#c2185b', on: true });
+      COOP.status = 'Conectado con ' + COOP.mate.name + '.';
+      coopApplyShared(o, o.mateColor);
+      break;
+    case 'full': COOP.status = 'Esa partida ya tiene dos jugadores.'; coopLeave(); coopRender(); break;
+    case 'status':
+      Object.assign(COOP.mate, { stage: o.stage, ready: !!o.ready, money: o.money | 0, look: o.look || 'casero', on: true });
+      if (o.name) COOP.mate.name = String(o.name).slice(0, 14);
+      if (host) coopHostAdvance();
+      coopRefresh();
+      break;
+    case 'gift': GS.money += Math.max(0, Math.min(10000, o.amt | 0)); GS.msg = (COOP.mate.name || 'Tu compañero') + ' te ha prestado ' + eur(o.amt) + '.'; saveG(); coopStatus(); coopRefresh(); break;
+    case 'season': coopBeginSeason(o); break;
+    case 'qstart': coopStartQuali(); break;
+    case 'qbest': COOP.qbest.g = typeof o.t === 'number' ? o.t : null; coopHostTryQres(); break;
+    case 'qres': coopShowQres(o); break;
+    case 'rstart': coopStartRace(o.grid); break;
+    case 'res': coopApplyRace(o.rows); break;
+    case 'toboxes': leaveRace(); coopApplyShared(o); break;            // trae los puntos del anfitrión: así nadie se descuadra
+    case 'final': coopSeasonEnd(); break;
+    case 'next': GS.next = o.next.slice(); saveG(); if (UI === 'garage') renderGarage(); break;
+    case 'st': COOP.bufs.push(Object.assign({ t: now }, o)); if (COOP.bufs.length > 90) COOP.bufs.shift(); coopMateFinish(o); break;
+    case 'ai': COOP.aiBuf.push({ t: now, r: o.r }); if (COOP.aiBuf.length > 60) COOP.aiBuf.shift(); break;
+    case 'ping': coopSend({ k: 'pong', t: o.t }); break;
+    case 'pong': { const r = now - o.t; if (r >= 0 && r < 5000) COOP.rtt = COOP.rtt ? COOP.rtt * .8 + r * .2 : r; break; }
+    case 'bye': if (host) coopMateLeft(); else { COOP.status = 'El anfitrión ha cerrado la partida. Tu progreso está guardado.'; coopLeave(); goMenu(); coopRender(); } break;
+  }
+}
+function coopUnique(n, ai) { const taken = new Set(['Tú'].concat((ai || RIVALS.slice(0, 4)).map(r => r.name))); let m = n || 'Compañero'; while (taken.has(m)) m += ' (amigo)'; return m; }
+function coopSetMateName() {                                  // el nombre del compañero en la tabla de puntos; si cambia, sus puntos le siguen
+  const sn = GS.season; if (!sn) return;
+  const nn = coopUnique(COOP.mate.name, sn.ai), old = sn.mateName;
+  if (old && old !== nn && sn.pts[old] !== undefined) { sn.pts[nn] = sn.pts[old]; delete sn.pts[old]; }
+  sn.mateName = nn;
+}
+// ---------- el anfitrión avanza cuando los dos están listos ----------
+function coopBothReady(stage) {
+  if (!COOP.ready || COOP.stage !== stage || !COOP.mate.on) return false;
+  if (COOP.mate.stage === stage) return COOP.mate.ready;
+  // el compañero volvió a conectarse a mitad de una carrera y espera en boxes: no hace falta esperarle
+  return COOP.mate.stage === 'boxes' && (stage === 'qres' || stage === 'res');
+}
+function coopHostAdvance() {
+  if (COOP.role !== 'host') return;
+  if (coopBothReady('garage')) {
+    // cuatro rivales de la IA; si alguno se llama como vosotros (los nombres son editables), se queda fuera
+    const mine = [myName(), COOP.mate.name].map(n => n.toLowerCase()), idx = RIVALS.map((r, i) => i);
+    const pick = idx.filter(i => !mine.includes(RIVALS[i].name.toLowerCase())).concat(idx.filter(i => mine.includes(RIVALS[i].name.toLowerCase()))).slice(0, 4).sort((a, b) => a - b);
+    const ai = pick.map(i => ({ name: mine.includes(RIVALS[i].name.toLowerCase()) ? RIVALS[i].name + ' (IA)' : RIVALS[i].name, color: RIVALS[i].color, i })), m = { k: 'season', tracks: GS.next.slice(), form: RIVALS.map(() => 1 + (Math.random() - .5) * .03), ai, diff: GS.diff, champ: GS.champ };
+    COOP.tr.broadcast(m); coopBeginSeason(m);
+  } else if (coopBothReady('boxes')) { COOP.tr.broadcast({ k: 'qstart' }); coopStartQuali(); }
+  else if (coopBothReady('qres')) { const g = COOP.grid; COOP.tr.broadcast({ k: 'rstart', grid: g }); coopStartRace(g); }
+  else if (coopBothReady('res')) {
+    if (GS.season && GS.season.race >= GS.season.tracks.length) { if (COOP.mate.stage !== 'res') COOP.tr.broadcast(Object.assign({ k: 'toboxes' }, coopShared())); COOP.tr.broadcast({ k: 'final' }); coopSeasonEnd(); }
+    else { COOP.stage = 'boxes'; COOP.ready = false; COOP.tr.broadcast(Object.assign({ k: 'toboxes' }, coopShared())); leaveRace(); goGarage(); coopStatus(); }
+  }
+}
+function coopSetReady(v) {
+  COOP.ready = v; coopStatus();
+  if (COOP.role === 'host') coopHostAdvance();
+  coopRefresh();
+}
+// ---------- garaje y boxes ----------
+function coopBeginSeason(m) {
+  GS.money -= ENTRY_FEE; GS.diff = m.diff;
+  const sn = { race: 0, pts: { 'Tú': 0 }, results: [], tracks: m.tracks.slice(), form: m.form, ai: m.ai, mateName: '' };
+  GS.season = sn; sn.mateName = coopUnique(COOP.mate.name, sn.ai);
+  sn.ai.forEach(a => { sn.pts[a.name] = 0; }); sn.pts[sn.mateName] = 0;
+  GS.next = m.tracks.slice(); GS.msg = 'Inscritos los dos. Primera carrera: ' + trackById(sn.tracks[0]).name + '.';
+  saveG(); COOP.stage = 'boxes'; COOP.ready = false; goGarage(); coopStatus();
+}
+function coopGarageAct(a) {                                  // devuelve true si la acción era del cooperativo
+  if (a === 'enroll') {
+    if (COOP.ready) { coopSetReady(false); return true; }
+    if (GS.money < ENTRY_FEE) { GS.msg = 'No llegas a la inscripción. Pide un préstamo a tu compañero.'; renderGarage(); return true; }
+    coopSetReady(true); return true;
+  }
+  if (a === 'quali' || a === 'go') {
+    const f = FUELS.find(x => x.id === GS.fuel) || FUELS[0];
+    if (COOP.ready) { GS.money += COOP.fuelPaid; COOP.fuelPaid = 0; saveG(); coopSetReady(false); return true; }
+    if (GS.money < f.price) { GS.msg = 'No llegas al combustible. Elige uno más barato o pide un préstamo.'; renderGarage(); return true; }
+    GS.money -= f.price; COOP.fuelPaid = f.price; saveG(); coopSetReady(true); return true;
+  }
+  if (a === 'lend') {
+    const amt = Math.min(50, Math.floor(GS.money)); if (amt <= 0 || !COOP.mate.on) return true;
+    GS.money -= amt; saveG(); coopSend({ k: 'gift', amt }); GS.msg = 'Has prestado ' + eur(amt) + ' a ' + COOP.mate.name + '.'; coopStatus(); renderGarage(); return true;
+  }
+  if (a === 'coopnew' && COOP.role === 'host') {
+    const gs = newState({ color: GS.color, assist: GS.assist }); gs.coopId = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    gs.msg = 'Run cooperativa nueva: kart casero para los dos.'; GS = gs; saveG();
+    COOP.stage = 'garage'; COOP.ready = false;
+    if (COOP.mate.on) COOP.tr.broadcast(Object.assign({ k: 'sync', hostName: myName(), hostColor: GS.color, mateColor: COOP.mate.color }, coopShared()));
+    goGarage(); coopStatus(); return true;
+  }
+  return a === 'retire' || a === 'newrun';
+}
+const COOP_STAGE_TXT = { garage: 'en el garaje', boxes: 'en boxes', quali: 'clasificando', qres: 'viendo la clasificación', race: 'en carrera', res: 'viendo resultados' };
+function coopDecorateGarage() {
+  const sn = GS.season, m = COOP.mate, waitTxt = m.on ? 'esperando a ' + m.name : 'esperando a que vuelva tu compañero';
+  $('#gStats').insertAdjacentHTML('beforeend', `<span class="coopmate"><i class="dot" style="background:${m.color}"></i>${esc(m.name || 'Compañero')}: ${m.on ? eur(m.money) + ' · ' + (COOP_STAGE_TXT[m.stage] || '') + (m.ready ? ' · listo' : '') : 'desconectado'}</span>`);
+  document.querySelectorAll('[data-act="retire"], [data-act="newrun"]').forEach(b => b.remove());
+  const foot = $('#gFoot'); if (m.on && GS.money > 0) foot.insertAdjacentHTML('beforeend', `<button class="btn" data-act="lend">Prestar ${eur(Math.min(50, Math.floor(GS.money)))} a ${esc(m.name)}</button>`);
+  const en = document.querySelector('[data-act="enroll"]');
+  if (en) { en.disabled = false; en.textContent = COOP.ready ? 'Inscrito ✓ — ' + waitTxt + ' (pulsa para cancelar)' : 'Inscribirnos por ' + eur(ENTRY_FEE) + ' cada uno'; }
+  const q = document.querySelector('[data-act="quali"]'), sk = document.querySelector('[data-act="go"]');
+  if (sk) sk.remove();
+  if (q) { q.disabled = false; q.textContent = COOP.ready ? 'Listo ✓ — ' + waitTxt + ' (pulsa para cancelar)' : 'Listo para la clasificación'; }
+  document.querySelectorAll('#garageBody p').forEach(p => { if (/contra cinco rivales/.test(p.textContent)) p.textContent = p.textContent.replace('contra cinco rivales', 'contra cuatro rivales de la IA y tu compañero'); });
+  if (COOP.role !== 'host') { const d = document.querySelector('[data-sel="diff"]'); if (d) d.closest('label').remove(); }
+  if (!sn && GS.money < ENTRY_FEE && m.on && m.money < ENTRY_FEE + Math.max(0, ENTRY_FEE - GS.money)) {
+    $('#garageBody').insertAdjacentHTML('afterbegin', `<div class="msg warn" role="status">${GS.money + m.money < 2 * ENTRY_FEE ? 'Entre los dos no llegáis a las dos inscripciones: vended piezas o empezad una run cooperativa nueva.' : 'No llegas a la inscripción: tu compañero te puede prestar.'}</div>`);
+    if (GS.money + m.money < 2 * ENTRY_FEE) foot.insertAdjacentHTML('beforeend', COOP.role === 'host' ? `<button class="btn" data-act="coopnew">Run cooperativa nueva</button>` : `<span class="dim">El anfitrión puede empezar una run nueva.</span>`);
+  }
+  if (sn) { const p = q && q.closest('section') && q.closest('section').querySelector('p.dim'); if (p) p.textContent = 'Clasificáis los dos a la vez, como fantasmas: la parrilla sale de vuestra mejor vuelta. El combustible se paga al marcar «Listo».'; }
+}
+function coopRefresh() {
+  if (!COOP.on) return;
+  if (UI === 'garage') renderGarage();
+  else if (UI === 'results') { if (COOP.stage === 'qres') coopShowQres(); else if (COOP.stage === 'res') coopShowRes(); }
+}
+// ---------- clasificación a la vez ----------
+function coopMateRival(laps) {
+  return { name: coopName(GS.season), color: COOP.mate.color, i: 9, net: true, pid: 'mate', mlook: COOP.mate.look, lt: Array(laps).fill(TRACK.pace), d0: 6, lane: 0, tgt: 0, latOff: 0, latV: 0, lagT: 0, dV: 0, hold: 0 };
+}
+function coopAI(laps) {
+  const sn = GS.season, all = makeRivals(TRACK, GS.diff, sn.form, laps, Math.random, GS.champ);
+  return sn.ai.map((a, k) => Object.assign(all[a.i === undefined ? k : a.i], { ai: k, name: a.name, color: a.color }));
+}
+function coopStartQuali() {
+  leaveRace(); enterTrack();
+  const rivals = coopAI(RACE_LAPS).concat([coopMateRival(RACE_LAPS)]);
+  race = { quali: true, coop: true, netLive: true, state: 'go', cd: 0, t0: simT, t: 0, laps: QUALI_LAPS, slot: 5, rivals, block: false, finishT: null, fuelCost: COOP.fuelPaid, fuel: GS.fuel, pos: 6, over: false,
+           contacts: 0, pHint: -1, look: rivalLook(), tyreBefore: GS.parts.neumaticos.wear.slice(), pLaps: [] };
+  beginQuali();
+  for (const r of race.rivals) if (r.net) r.qLaps = [];
+  COOP.qbest = {}; COOP.bufs.length = 0; COOP.aiBuf.length = 0; COOP.stage = 'quali'; COOP.ready = false; COOP.fuelPaid = 0;
+  stepHook = COOP.role === 'host' ? coopHostQStep : coopGuestQStep;
+  $('#setupName').textContent = catOf('chasis', GS.parts.chasis.id).name;
+  show('play'); coopStatus();
+}
+function coopPuppetFrom(buf, tq) { return netSample(buf, tq, asIs); }
+function coopHostQStep() {
+  const R = race; if (!R) return; const r = R.rivals.find(x => x.net);
+  if (r && !r.left) { const s = coopPuppetFrom(COOP.bufs, performance.now() - NET_DELAY); if (s) puppet(r.kt, s); }
+  const o = R.over; R.over = false; qualiStep(); R.over = o;           // la IA sigue rodando aunque tú ya hayas terminado
+}
+function coopGuestQStep() {
+  const R = race; if (!R) return; const tq = performance.now() - NET_DELAY;
+  for (const r of R.rivals) {
+    const s = r.net ? coopPuppetFrom(COOP.bufs, tq) : netSample(COOP.aiBuf, tq, m => { const v = m.r[r.ai]; return v ? { x: v[0], y: v[1], a: v[2], vx: v[3], vy: v[4], st: v[5], D: v[6], done: v[7], est: v[8] } : null; });
+    if (!s) continue;
+    puppet(r.kt, s); r.x = s.x; r.y = s.y; r.a = s.a; r.vx = s.vx; r.vy = s.vy; r.vs = Math.hypot(s.vx, s.vy); r.D = s.D;
+    if (!r.net) { if (s.est > 0) r.qLaps = [s.est]; r.done = !!s.done; }
+  }
+}
+function coopQualiDone() {
+  const R = race; if (R.over) return; R.over = true; R.block = true;
+  for (let k = 0; k < 4; k++) wearDyn[k] = R.tyreBefore[k];
+  R.myQ = pBest(R);
+  COOP.sendT = -1e9; coopTick(performance.now());
+  if (COOP.role === 'host') { COOP.qbest.h = R.myQ; coopHostTryQres(); }
+  else COOP.tr.send({ k: 'qbest', t: R.myQ });
+  if (COOP.stage === 'quali') { $('#resBody').innerHTML = `<h2>Clasificación terminada</h2><p>Tu mejor vuelta: <b>${R.myQ === null ? 'sin tiempo' : fmt(R.myQ)}</b>.</p><p class="msg">Esperando a que ${esc(COOP.mate.name || 'tu compañero')} termine…</p>`; show('results'); }
+}
+function coopHostTryQres() {
+  const R = race; if (!R || !R.quali || COOP.qbest.h === undefined || COOP.qbest.g === undefined) return;
+  for (const r of R.rivals) if (r.net) r.done = true;
+  qualiFastForward(R);
+  for (const r of R.rivals) if (!r.net && !r.qLaps.length) r.qLaps.push(r.qLap * 1.02);
+  const rows = R.rivals.filter(r => !r.net).map(r => ({ key: 'a' + r.ai, t: qualiBest(r) }));
+  rows.push({ key: 'h', t: COOP.qbest.h }, { key: 'g', t: COOP.qbest.g });
+  rows.sort((a, b) => (a.t === null ? 1e9 : a.t) - (b.t === null ? 1e9 : b.t));
+  COOP.grid = rows.map(x => x.key);
+  const o = { k: 'qres', rows, grid: COOP.grid };
+  COOP.tr.broadcast(o); coopShowQres(o);
+}
+function coopShowQres(o) {
+  if (o) { COOP.qres = o; COOP.grid = o.grid; COOP.stage = 'qres'; COOP.ready = false; coopStatus(); }
+  const q = COOP.qres; if (!q) return;
+  const pole = q.rows[0].t, my = coopMyKey();
+  $('#resBody').innerHTML = `<h2>Clasificación en ${TRACK.name}</h2>` +
+    `<table class="tbl"><thead><tr><th scope="col">Pos.</th><th scope="col">Piloto</th><th scope="col">Mejor vuelta</th><th scope="col">Diferencia</th></tr></thead><tbody>${q.rows.map((x, k) => {
+      const nm = coopKeyName(x.key), col = x.key === my ? GS.color : x.key === coopMateKey() ? COOP.mate.color : GS.season.ai[+x.key.slice(1)].color;
+      return `<tr class="${x.key === my ? 'me' : ''}"><td>${k + 1}</td><td><i class="dot" style="background:${col}"></i>${esc(pName(nm))}${x.key === coopMateKey() ? ' <span class="dim">(compañero)</span>' : ''}</td><td>${x.t === null ? '—' : fmt(x.t)}</td><td>${x.t === null ? '' : k === 0 ? 'pole' : '+' + (x.t - pole).toFixed(2) + ' s'}</td></tr>`; }).join('')}</tbody></table>` +
+    coopReadyBtn('Listo para la carrera');
+  if (UI !== 'results') show('results');
+}
+function coopReadyBtn(txt) {
+  const m = COOP.mate;
+  return `<p class="dim">${m.on ? esc(m.name) + (m.ready && m.stage === COOP.stage ? ' está listo.' : ' todavía no está listo.') : 'Tu compañero está desconectado.'}</p>` +
+    `<div class="btns"><button class="btn pri big2" data-c="ready">${COOP.ready ? 'Listo ✓ (pulsa para cancelar)' : txt}</button><button class="btn big2" data-c="leave">Salir al menú</button></div>`;
+}
+// ---------- carrera ----------
+function coopStartRace(grid) {
+  leaveRace(); enterTrack();
+  const sn = GS.season, laps = lapsFor(sn, sn.race), ai = coopAI(laps), mate = coopMateRival(laps), my = coopMyKey(), rivals = [];
+  let slot = grid.length - 1;
+  grid.forEach((key, k) => { if (key === my) { slot = k; return; } const r = key === coopMateKey() ? mate : ai[+key.slice(1)]; r.slot = k; r.d0 = 6 + 5 * k; r.lane = r.tgt = r.latOff = (k % 2 ? 1 : -1) * 1.4; rivals.push(r); });
+  race = { state: 'grid', cd: 3 - (COOP.role === 'host' ? 0 : Math.min(.4, COOP.rtt / 2000)), t0: 0, t: 0, laps, mult: multFor(sn, sn.race), slot, rivals, block: true, finishT: null, fuelCost: 0, fuel: GS.fuel, pos: slot + 1, over: false,
+           contacts: 0, pHint: -1, look: rivalLook(), tyreBefore: GS.parts.neumaticos.wear.slice(), coop: true, netLive: true };
+  reset(slot); SMK.length = 0; ACC.eng = ACC.brk = ACC.chn = 0;
+  setupRaceKarts(race);
+  COOP.bufs.length = 0; COOP.aiBuf.length = 0; COOP.stage = 'race'; COOP.ready = false;
+  stepHook = COOP.role === 'host' ? coopHostRStep : coopGuestRStep; draftK = 0;
+  if (COOP.role === 'host') rivalsStep();
+  $('#setupName').textContent = catOf('chasis', GS.parts.chasis.id).name;
+  show('play'); coopStatus();
+}
+function coopHostRStep() {
+  const R = race; if (!R) return; const r = R.rivals.find(x => x.net);
+  if (r && !r.left) { const s = coopPuppetFrom(COOP.bufs, performance.now() - NET_DELAY); if (s) puppet(r.kt, s); }
+  rivalsStep();
+}
+function coopGuestRStep() {
+  const R = race; if (!R) return; const tq = performance.now() - NET_DELAY, t = R.state === 'grid' ? 0 : simT - R.t0;
+  for (const r of R.rivals) {
+    const s = r.net ? (r.left ? null : coopPuppetFrom(COOP.bufs, tq)) : netSample(COOP.aiBuf, tq, m => { const v = m.r[r.ai]; return v ? { x: v[0], y: v[1], a: v[2], vx: v[3], vy: v[4], st: v[5], D: v[6], done: v[7], est: v[8] } : null; });
+    if (!s) continue;
+    puppet(r.kt, s); r.x = s.x; r.y = s.y; r.a = s.a; r.vx = s.vx; r.vy = s.vy; r.vs = Math.hypot(s.vx, s.vy); r.D = s.D;
+    if (!r.net) { r.done = !!s.done; r.estT = s.est; if (s.done) { r.finT = s.est; r.kt.ghost = true; } }
+    else if (!r.done) r.estT = t + Math.max(0, TRACK.LEN * R.laps - r.D) / (TRACK.LEN / TRACK.pace);
+  }
+  draftUpdate(R);
+}
+function coopMateFinish(o) {
+  if (race && race.coop && race.quali && o.qd) { const r = race.rivals.find(x => x.net); if (r) r.done = true; return; }
+  if (!race || !race.coop || race.quali || !(o.fin || o.ab)) return;
+  const r = race.rivals.find(x => x.net); if (!r || r.done) return;
+  r.done = true; r.finT = o.ab ? null : o.fin; r.abandon = !!o.ab; r.estT = o.ab ? Infinity : o.fin; r.kt.ghost = true;
+}
+function coopRaceDone(abandon) {
+  race.myFin = abandon ? 0 : race.finishT; race.myAb = !!abandon;
+  COOP.sendT = -1e9; coopTick(performance.now());
+  $('#resBody').innerHTML = `<h2>${abandon ? 'Has abandonado' : 'Has terminado: ' + fmt(race.finishT)}</h2><p class="msg">Esperando a que lleguen todos…</p>`;
+  show('results');
+}
+function coopTick(now) {
+  const tr = COOP.tr; if (!tr) return;
+  if (now - COOP.pingT > 1000 || now < COOP.pingT) { COOP.pingT = now; coopSend({ k: 'ping', t: now }); }
+  if (!race || !race.coop) return;
+  if (now - COOP.sendT >= 33) {
+    COOP.sendT = now;
+    const D = LAP.cnt * TRACK.LEN + LAP.s, r3 = v => Math.round(v * 1000) / 1000;
+    coopSend({ k: 'st', x: r3(B.x), y: r3(B.y), a: r3(B.a), vx: r3(B.vx), vy: r3(B.vy), st: r3(B.steer || 0), D: r3(D), fin: race.myFin || 0, ab: race.myAb ? 1 : 0, qd: race.quali && race.over ? 1 : 0 });
+  }
+  if (COOP.role === 'host') {
+    if (now - COOP.aiT >= 50) {
+      COOP.aiT = now; const arr = [], r2 = v => Math.round(v * 100) / 100;
+      for (const r of race.rivals) if (!r.net) { const extra = race.quali ? (qualiBest(r) || 0) : (isFinite(r.estT) ? r.estT : 0); arr[r.ai] = [r2(r.x), r2(r.y), r2(r.a), r2(r.vx), r2(r.vy), r2(r.kt.B.steer || 0), r2(r.D), r.done ? 1 : 0, r2(extra)]; }
+      if (arr.length) tr.broadcast({ k: 'ai', r: arr });
+    }
+    if (!race.quali && race.over && !race.final && race.rivals.every(r => r.done)) coopHostFinal();
+  }
+}
+function coopHostFinal() {
+  const rows = race.rivals.map(r => ({ key: r.net ? 'g' : 'a' + r.ai, t: r.left || r.abandon ? null : r.finT, st: r.left ? 'left' : r.abandon ? 'ab' : 'fin' }));
+  rows.push({ key: 'h', t: race.myAb ? null : race.finishT, st: race.myAb ? 'ab' : 'fin' });
+  rows.sort((a, b) => (a.t === null ? 1e9 : a.t) - (b.t === null ? 1e9 : b.t));
+  race.final = rows; COOP.tr.broadcast({ k: 'res', rows }); coopApplyRace(rows);
+}
+// puntos, premio y desgaste de cada uno, con la misma tabla en los dos navegadores
+function coopApplyRace(rows) {
+  if (!race || !race.coop || race.applied) return;
+  race.applied = true; race.final = rows;
+  const sn = GS.season, mult = race.mult || 1, my = coopMyKey();
+  rows.forEach((x, k) => { const n = coopKeyName(x.key); sn.pts[n] = (sn.pts[n] || 0) + (x.t === null ? 0 : POINTS[k] * mult); });
+  const myPos = rows.findIndex(x => x.key === my) + 1, ab = !!race.myAb, prize = ab ? 0 : (PRIZE[myPos - 1] || 0) * mult;
+  GS.money += prize;
+  const wr = applyRaceWear(GS, ACC, wearDyn, race.fuel, TRACK.ref);
+  GS.stats.races++; if (!ab && myPos <= 3) GS.stats.podiums++;
+  sn.results.push({ track: TRACK.name, pos: ab ? 6 : myPos, t: race.finishT, prize }); sn.race++;
+  saveG();
+  COOP.res = { rows, prize, wr, myPos, ab, track: TRACK.name, mult }; COOP.stage = 'res'; COOP.ready = false; coopStatus();
+  coopShowRes();
+}
+function coopShowRes() {
+  const R = COOP.res; if (!R) return;
+  const my = coopMyKey(), sn = GS.season;
+  const col = k => k === my ? GS.color : k === coopMateKey() ? COOP.mate.color : sn.ai[+k.slice(1)].color;
+  $('#resBody').innerHTML = `<h2>${R.ab ? 'Carrera abandonada' : R.myPos === 1 ? 'Victoria' : R.myPos + '.º puesto'} en ${R.track}</h2>` +
+    `<table class="tbl"><thead><tr><th scope="col">Pos.</th><th scope="col">Piloto</th><th scope="col">Tiempo</th><th scope="col">Puntos</th></tr></thead><tbody>${R.rows.map((x, k) =>
+      `<tr class="${x.key === my ? 'me' : ''}"><td>${k + 1}</td><td><i class="dot" style="background:${col(x.key)}"></i>${esc(pName(coopKeyName(x.key)))}${x.key === coopMateKey() ? ' <span class="dim">(compañero)</span>' : ''}</td><td>${x.st === 'left' ? 'se fue' : x.st === 'ab' ? 'abandono' : fmt(x.t)}</td><td>${x.t === null ? 0 : POINTS[k] * R.mult}</td></tr>`).join('')}</tbody></table>` +
+    `<p>Tu premio: <b>${eur(R.prize)}</b>. Desgaste: motor ${lossTxt(R.wr.motor)}, frenos ${lossTxt(R.wr.frenos)}, cadena ${lossTxt(R.wr.cadena)}.</p>` +
+    `<h3>Campeonato ${GS.champ}</h3>${standings(sn)}` +
+    coopReadyBtn(sn.race >= sn.tracks.length ? 'Listo para ver el final del campeonato' : 'Listo para ir a boxes');
+  if (UI !== 'results') show('results');
+}
+function coopSeasonEnd() {
+  leaveRace(); COOP.stage = 'garage'; COOP.ready = false;
+  endSeason(false);                                                           // cada uno cobra su bonus según su puesto
+  if (COOP.role === 'host') coopSend({ k: 'next', next: GS.next });
+  coopStatus();
+}
+// ---------- pantalla de entrada ----------
+function coopRender() {
+  let h = `<h2>Cooperativo, 2 jugadores</h2>`;
+  const sv = coopLoad();
+  if (!COOP.on && window.claude && !window.__netRelay) {
+    h += `<p>Dentro de claude.ai las conexiones directas están bloqueadas: el cooperativo funciona en la web del juego, <a href="https://vreguera.github.io/karting-rpg/" target="_blank" rel="noopener"><b>vreguera.github.io/karting-rpg</b></a>.</p><div class="btns"><button class="btn big2" data-c="leave">Volver</button></div>`;
+  } else if (!COOP.on) {
+    h += `<p>Una run para los dos: cada uno con su garaje, su dinero y sus piezas, en los mismos campeonatos. Para avanzar de pantalla tenéis que confirmar los dos.</p>` +
+      `<label class="fld">Tu nombre <input type="text" id="cnick" data-c="nick" maxlength="14" value="${esc(NAMES.me)}" placeholder="Jugador"></label>` +
+      (sv ? `<p class="dim">Tienes una run cooperativa guardada: campeonato ${sv.champ}${sv.season ? ', carrera ' + (sv.season.race + 1) + ' de ' + sv.season.tracks.length : ''}, ${eur(sv.money)}.</p>` : '') +
+      `<div class="btns"><button class="btn pri big2" data-c="host">${sv ? 'Continuar la run (crear sala)' : 'Crear partida'}</button>${sv ? `<button class="btn big2" data-c="hostnew">Run nueva</button>` : ''}</div>` +
+      `<label class="fld">Código <input type="text" id="ccode" data-c="code" maxlength="4" autocomplete="off" style="text-transform:uppercase;width:6em" placeholder="ABCD"></label>` +
+      `<div class="btns"><button class="btn big2" data-c="join">Unirme</button><button class="btn big2" data-c="leave">Volver</button></div>` +
+      (COOP.status ? `<p class="msg warn">${esc(COOP.status)}</p>` : '');
+  } else {
+    h += `<p class="kick">Código de la partida</p><p class="netcode">${COOP.code}</p><p class="msg">${esc(COOP.status)}</p>` +
+      `<div class="btns"><button class="btn big2" data-c="leave">Salir</button></div>`;
+  }
+  $('#resBody').innerHTML = h;
+  if (UI !== 'results') show('results');
+}
+$('#resBody').addEventListener('click', e => {
+  const b = e.target.closest('button[data-c]'); if (!b) return;
+  const a = b.dataset.c;
+  if (a === 'host' || a === 'hostnew') coopStart('host', null, a === 'hostnew');
+  else if (a === 'join') { const v = ($('#ccode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (v.length !== 4) { COOP.status = 'El código tiene 4 letras o números.'; coopRender(); return; } coopStart('guest', v); }
+  else if (a === 'ready') coopSetReady(!COOP.ready);
+  else if (a === 'leave') { goMenu(); }
+});
+$('#resBody').addEventListener('change', e => {
+  if (e.target.dataset.c === 'nick') { NAMES.me = e.target.value.trim().slice(0, 14); try { localStorage.setItem('krpg_names', JSON.stringify(NAMES)); } catch (er) {} }
+});
+$('#btnCoop').addEventListener('click', () => { quickEnd(); leaveRace(); MODE = 'menu'; COOP.status = ''; coopRender(); });
+
+
 /* ---------- carrera rápida ---------- */
 // Usa todo el flujo del campeonato con un estado de juego temporal (kart de alquiler, una sola carrera) que no se guarda;
 // al volver al menú se recupera tu partida tal cual (las mejores vueltas sí cuentan).
@@ -4720,7 +5157,7 @@ let QUICK = null;
 const quickCfg = { track: 'parque', tyre: 'n_medios', diff: 'normal', laps: 3 };
 try { Object.assign(quickCfg, JSON.parse(localStorage.getItem('krpg_quick') || '{}')); } catch (e) {}
 const quickSave = () => { try { localStorage.setItem('krpg_quick', JSON.stringify(quickCfg)); } catch (e) {} };
-function quickEnd() { if (!QUICK) return; GS = QUICK.real; QUICK = null; saveG(); }
+function quickEnd() { if (!QUICK) return; if (QUICK.coop) { coopLeave(); return; } GS = QUICK.real; QUICK = null; saveG(); }
 function quickSetup() {
   quickEnd(); leaveRace(); MODE = 'menu'; document.body.dataset.mode = 'menu';
   const T = trackById(quickCfg.track) || TRACKS[0]; quickCfg.track = T.id;
@@ -4794,7 +5231,7 @@ function setPause(on) {
     const champ = MODE === 'champ';
     const q = champ && race.quali;
     $('#pRestart').textContent = q ? 'Reiniciar la clasificación' : champ ? 'Reiniciar carrera' : 'Volver a la parrilla';
-    $('#pRestart').hidden = !!(race && race.net);
+    $('#pRestart').hidden = !!(race && (race.net || race.coop));
     $('#pQuit').textContent = q ? 'Terminar la clasificación' : champ ? (race.state === 'grid' ? 'Volver a boxes' : 'Abandonar carrera') : 'Volver al menú';
     $('#pauseInfo').textContent = q ? `Clasificación en ${TRACK.name}. ${race.pLaps.length} de ${QUALI_LAPS} vueltas hechas${pBest(race) !== null ? ', mejor ' + fmt(pBest(race)) : ''}. Terminar ahora usa lo que lleves; sin tiempo válido sales el último.` : champ ? `${TRACK.name}. ${race.state === 'grid' ? 'En parrilla' : 'Vuelta ' + Math.max(1, Math.min(race.laps, LAP.cnt + 1)) + ' de ' + race.laps + ', ' + fmt(race.t || 0)}. Reiniciar devuelve los neumáticos al estado de la salida.` : `Pruebas libres en ${TRACK.name}.`;
     $('#pResume').focus();
@@ -4820,7 +5257,7 @@ $('#pRestart').addEventListener('click', restartRace);
 $('#pQuit').addEventListener('click', () => {
   if (MODE === 'free') { setPause(false); goMenu(); return; }
   if (!race) return;
-  if (race.state === 'grid') { setPause(false); if (QUICK) { quickSetup(); return; } GS.money += race.fuelCost; saveG(); goGarage(); return; }
+  if (race.state === 'grid' && !race.coop) { setPause(false); if (QUICK) { quickSetup(); return; } GS.money += race.fuelCost; saveG(); goGarage(); return; }
   if (!quitArmed) { quitArmed = true; $('#pQuit').textContent = '¿Seguro? Pulsa otra vez'; return; }
   quitArmed = false; setPause(false); if (race.quali) finishQuali(); else finishRace(true);
 });
@@ -4828,7 +5265,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !PA
 $('#backBtn').addEventListener('click', () => {
   if (MODE === 'free') { setDrawer(false); goMenu(); return; }
   if (!race) return;
-  if (race.state === 'grid') { setDrawer(false); if (QUICK) { quickSetup(); return; } GS.money += race.fuelCost; saveG(); goGarage(); return; }
+  if (race.state === 'grid' && !race.coop) { setDrawer(false); if (QUICK) { quickSetup(); return; } GS.money += race.fuelCost; saveG(); goGarage(); return; }
   if (!abandonArmed) { abandonArmed = true; $('#backBtn').textContent = '¿Seguro? Pulsa otra vez'; setTimeout(() => { abandonArmed = false; syncBack(); }, 4000); return; }
   abandonArmed = false; syncBack(); setDrawer(false); if (race.quali) finishQuali(); else finishRace(true);
 });
