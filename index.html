@@ -526,6 +526,13 @@ table.cmp td { font-variant-numeric: tabular-nums; }
 .panel h2 { font: 700 38px/1.05 var(--f-disp); color: var(--flag); text-shadow: 3px 3px 0 var(--k-ink); margin: 0 0 10px; text-wrap: balance; }
 .screen.pause .panel { max-width: 440px; }
 .pbtns .btn { font-size: 18px; }
+.screen.opts .panel { max-width: 560px; }
+.otabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px; }
+.otabs .btn[aria-selected="true"] { background: var(--k-ink, #1d2126); color: var(--cream, #fff6d8); }
+.opane { display: grid; gap: 6px; min-width: 0; }
+.opane[hidden] { display: none; }
+.opane .row { border-bottom-color: color-mix(in srgb, currentColor 18%, transparent); }
+.opane input[type=checkbox] { width: 22px; height: 22px; }
 
 /* Ajustes también desde la portada: el panel queda por encima de las pantallas de menú */
 #drawer { z-index: 30; }
@@ -616,11 +623,12 @@ svg.flag { flex: none; width: 18px; height: 12px; box-shadow: 0 0 0 1.5px var(--
         <p class="tlead"><span class="altbadge">World</span> Karts más ágiles y un <b>salto</b> en el botón de derrape: púlsalo para encarar la curva y mantenlo para derrapar. Empiezas con un <b>kart casero</b> y un puñado de euros. Cada campeonato son <b>cuatro carreras</b> en circuitos sorteados, la última larga: los premios pagan piezas, las piezas se gastan y, si te quedas sin dinero, la run se acaba.</p>
         <div class="tmenu">
           <button class="btn big pri" id="btnChamp"><span class="bt">Campeonato</span><span class="bs" id="champSub"></span></button>
+          <button class="btn big" id="btnOnline"><span class="bt">Online, 2 jugadores</span><span class="bs">Corre contra un amigo por internet: uno crea la partida y le pasa el código al otro.</span></button>
           <button class="btn big" id="btnQuick"><span class="bt">Carrera rápida</span><span class="bs">Eliges circuito, neumáticos y vueltas; kart de alquiler para todos. No toca tu partida.</span></button>
           <button class="btn big" id="btnFree"><span class="bt">Pruebas libres</span><span class="bs">Todos los circuitos y setups, con los ajustes de física. Sin dinero ni rivales.</span></button>
         </div>
         <section class="runcard" id="menuInfo" aria-label="Tu partida"></section>
-        <p class="tfoot"><button class="btn sm" id="btnOpts">Ajustes</button><button class="btn sm" id="btnWipe">Borrar partida guardada</button></p>
+        <p class="tfoot"><button class="btn sm" id="btnOpts">Opciones</button><button class="btn sm" id="btnWipe">Borrar partida guardada</button></p>
         <p class="padhint">Mando: cruceta o stick para moverte, A para elegir.</p>
       </div>
     </div>
@@ -644,13 +652,53 @@ svg.flag { flex: none; width: 18px; height: 12px; box-shadow: 0 0 0 1.5px var(--
       <div class="pbtns">
         <button class="btn pri big2" id="pResume">Seguir</button>
         <button class="btn big2" id="pRestart">Reiniciar carrera</button>
+        <button class="btn big2" id="pOpts">Opciones</button>
         <button class="btn big2" id="pQuit">Abandonar carrera</button>
       </div>
       <p class="dim">Esc o Start para seguir. Con el mando: cruceta para elegir, A para confirmar.</p>
     </div>
   </div>
+  <div id="scr-opts" class="screen overlay pause opts" role="dialog" aria-modal="true" aria-labelledby="optsT">
+    <div class="panel">
+      <h2 id="optsT">Opciones</h2>
+      <div class="otabs" role="tablist" aria-label="Secciones de opciones">
+        <button class="btn sm" role="tab" data-otab="juego" aria-selected="true">Juego</button>
+        <button class="btn sm" role="tab" data-otab="sonido" aria-selected="false">Sonido</button>
+        <button class="btn sm" role="tab" data-otab="pantalla" aria-selected="false">Pantalla</button>
+        <button class="btn sm" role="tab" data-otab="controles" aria-selected="false">Controles</button>
+        <button class="btn sm" role="tab" data-otab="pilotos" aria-selected="false">Pilotos</button>
+      </div>
+      <section class="opane" data-opane="juego">
+        <div class="slider"><div class="top"><label for="op-assist">Asistencia de dirección</label><output id="opv-assist"></output></div>
+          <input type="range" id="op-assist" min="0" max="1" step="0.05"></div>
+        <p class="dim">Más asistencia: el kart corrige solo los derrapes y es más fácil de llevar. Menos: más control y más rápido si lo dominas.</p>
+        <div class="row"><label for="op-slipHud">Indicador de deriva</label><input type="checkbox" id="op-slipHud" data-oopt="slipHud"></div>
+        <div class="row"><label for="op-tele">Telemetría (fuerzas, cargas y datos)</label><input type="checkbox" id="op-tele" data-oopt="tele"></div>
+        <div class="row"><label for="op-speedzoom">La cámara se aleja con la velocidad</label><input type="checkbox" id="op-speedzoom" data-oopt="speedzoom"></div>
+        <div class="row"><label for="op-deadzone">Cámara con margen (se mueve menos)</label><input type="checkbox" id="op-deadzone" data-oopt="deadzone"></div>
+        <p class="pbtns"><button class="btn" id="opAdvanced">Ajustes avanzados de física…</button></p>
+      </section>
+      <section class="opane" data-opane="sonido" hidden>
+        <div id="opVolBox"></div>
+        <div class="row"><label for="op-mute">Silenciar</label><input type="checkbox" id="op-mute"></div>
+      </section>
+      <section class="opane" data-opane="pantalla" hidden>
+        <h4>Tema</h4>
+        <div class="pills" role="radiogroup" aria-label="Tema">
+          <label class="pill"><input type="radio" name="optheme" value="system"><span><b>Automático</b><em>Como tu sistema</em></span></label>
+          <label class="pill"><input type="radio" name="optheme" value="light"><span><b>Claro</b></span></label>
+          <label class="pill"><input type="radio" name="optheme" value="dark"><span><b>Oscuro</b></span></label>
+        </div>
+        <div class="row"><label for="op-touch">Controles táctiles en pantalla</label><input type="checkbox" id="op-touch" data-oopt="touch"></div>
+      </section>
+      <section class="opane" data-opane="controles" hidden><div id="opPadBox"></div></section>
+      <section class="opane" data-opane="pilotos" hidden><div id="opNamesBox"></div></section>
+      <div class="pbtns"><button class="btn pri big2" id="opClose">Volver</button></div>
+      <p class="dim">Esc o B para volver. Con el mando: cruceta para moverte, izquierda y derecha cambian los deslizadores, LB y RB cambian de sección.</p>
+    </div>
+  </div>
   <button class="btn" id="pauseBtn">Pausa</button>
-  <button class="btn" id="menuBtn" aria-expanded="false" aria-controls="drawer">Ajustes</button>
+  <button class="btn" id="menuBtn" aria-expanded="false" aria-controls="drawer">Opciones</button>
 
   <div id="tele" aria-hidden="true">
     <canvas id="teleC" width="252" height="150"></canvas>
@@ -1905,7 +1953,8 @@ function aiTick(R, t) {
   const others = [{ x: B.x, y: B.y, vx: B.vx, vy: B.vy, lat: pq.off, ghost: false }].concat(R.rivals.map(o => ({ x: o.x, y: o.y, vx: o.vx, vy: o.vy, lat: o.lat, ghost: o.done, r: o })));
   for (const r of R.rivals) {
     const ctl = r.ctl, kt = r.kt, kb = kt.B, P = kt.P;
-    if (R.state !== 'go' && !R.quali) { Object.assign(ctl, NO_CTL); continue; }
+    if (r.net) continue;                                       // un jugador remoto: lo conduce su dueño
+    if (R.state !== 'go' && !R.quali && !(R.netLive && R.state !== 'grid')) { Object.assign(ctl, NO_CTL); continue; }
     const c = Math.cos(kb.a), s = Math.sin(kb.a), vf = kb.vx * c + kb.vy * s, sp = Math.hypot(kb.vx, kb.vy);
     const q = Tk.near(kb.x, kb.y, r.hint);
     // comisario: atascado, mirando al revés o fuera de la pista
@@ -1965,19 +2014,23 @@ function aiTick(R, t) {
   }
 }
 function rivalsStep() {
-  const R = race; if (!R || R.over) return;
+  const R = race; if (!R || (R.over && !R.netLive)) return;
   const Tk = TRACK, t = R.state === 'grid' ? 0 : simT - R.t0, rs = R.rivals;
   for (const r of rs) {                                       // progreso de cada rival por el circuito
     const kb = r.kt.B, q = Tk.near(kb.x, kb.y, r.hint); r.hint = q.i;
     let ds = q.s - r.sPrev; if (ds < -Tk.LEN / 2) ds += Tk.LEN; else if (ds > Tk.LEN / 2) ds -= Tk.LEN;
     r.D += ds; r.sPrev = q.s; r.lat = q.off;
     r.x = kb.x; r.y = kb.y; r.a = kb.a; r.vx = kb.vx; r.vy = kb.vy; r.vs = Math.hypot(kb.vx, kb.vy);
-    if (!r.done && R.state === 'go' && r.D >= Tk.LEN * r.lt.length) { r.done = true; r.finT = t; r.kt.ghost = true; }
+    if (!r.done && !r.net && (R.state === 'go' || R.netLive && R.state !== 'grid') && r.D >= Tk.LEN * r.lt.length) { r.done = true; r.finT = t; r.kt.ghost = true; }
     const lap = r.lt.reduce((a, b) => a + b, 0) / r.lt.length;
-    r.estT = r.done ? r.finT : R.state === 'grid' ? rivalFinish(r) : t + Math.max(0, Tk.LEN * r.lt.length - r.D) / (Tk.LEN / lap);
+    r.estT = r.done ? (r.finT === null || r.finT === undefined ? Infinity : r.finT) : R.state === 'grid' ? rivalFinish(r) : t + Math.max(0, Tk.LEN * r.lt.length - r.D) / (Tk.LEN / lap);
   }
   R.aiAcc = (R.aiAcc || 0) + DT;
   if (R.aiAcc >= AI_DT - 1e-9) { R.aiAcc -= AI_DT; aiTick(R, t); }
+  draftUpdate(R);
+}
+function draftUpdate(R) {
+  const rs = R.rivals;
   // rebufo (tu kart)
   let best = 0, bestR = null;
   if (R.state === 'go') {
@@ -2237,7 +2290,7 @@ function sfx(kind, amt) {
 function audioUpdate(dt, hitJ) {
   const c = SND.ctx; if (!c || !SND.riv) return;
   const active = UI === 'play' && !PAUSED && !document.hidden;
-  tgt(SND.master.gain, active ? SND.vol : 0, .08);
+  tgt(SND.master.gain, active && !SND.muted ? SND.vol : 0, .08);
   if (!active) return;
   const sp = Math.hypot(B.vx, B.vy), vmax = V_MAX / (S.gear || 1), rpm = clamp(sp / vmax, 0, 1.1), thr = B.thr || 0;
   const f = 62 + 150 * Math.pow(rpm, .9) + 14 * thr;
@@ -2745,6 +2798,10 @@ function drawRivals() {
     const kt = r.kt;
     drawKartModel(ctx, look, r.color, kt ? { steer: kt.B.steer, ang: kt.tyre.map(d => d.ang), helmet: KC.white } : { steer: 0, helmet: KC.white });
     ctx.restore();
+    if (r.net) {
+      ctx.save(); worldXf(); ctx.font = '800 .95px "Barlow Condensed", Barlow, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = .22; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.fillStyle = '#fff'; ctx.strokeText(r.name, r.x, r.y - 1.4); ctx.fillText(r.name, r.x, r.y - 1.4); ctx.restore();
+    }
   }
 }
 /* ---------- Humo de neumáticos y polvo ---------- */
@@ -3233,13 +3290,14 @@ function frame(ts) {
   pollPad();
   const dt = Math.min(.1, (ts - last) / 1000); last = ts;
   if (UI === 'menu' || UI === 'garage') { acc = 0; audioUpdate(0, 0); requestAnimationFrame(frame); return; }
-  if (PAUSED) acc = 0;
+  if (PAUSED && !(race && race.net)) acc = 0;
   else {
     acc += dt;
     while (acc >= DT) { step(); lapUpdate(); acc -= DT; }
     raceUpdate(dt);
   }
   const hitJ = bumpJ; lifeUpdate(PAUSED ? 0 : dt); audioUpdate(PAUSED ? 0 : dt, hitJ);
+  if (NET.on) netTick(performance.now());
   updateCam(PAUSED ? 0 : dt); smokeUpdate(PAUSED ? 0 : dt); draw(); teleUpdate(); drawMini(); lapHud(); drawSlip(); drawSpeedo(); drawWear(); raceHud();
   const v = Math.round(Math.hypot(B.vx, B.vy) * 3.6);
   if (v !== lastSpd) { $('#spd').textContent = v; lastSpd = v; }
@@ -3262,8 +3320,9 @@ new ResizeObserver(resize).observe(stage);
 let padWas = null, padBtns = [false, false, false, false, false];
 /* Navegación de menús con el mando (cruceta o stick, A, B, LB/RB, stick derecho) */
 const nav = { prev: {}, dir: null, next: 0 };
-const NAV_SEL = 'button:not([disabled]), select, input[type="radio"]';
+const NAV_SEL = 'button:not([disabled]), select, input[type="radio"], input[type="range"], input[type="checkbox"], input[type="text"]';
 function navScreen() {
+  if (OPTS.open) return $('#scr-opts');
   if (PAUSED) return $('#scr-pause');
   return UI === 'menu' ? $('#scr-menu') : UI === 'garage' ? $('#scr-garage') : UI === 'results' ? $('#scr-results') : null;
 }
@@ -3301,12 +3360,14 @@ function navPress(el) {
   });
 }
 function navBack() {
+  if (OPTS.open) { closeOpts(); return; }
   if (PAUSED) { setPause(false); return; }
   const scr = navScreen(); if (!scr) return;
-  const b = UI === 'garage' ? scr.querySelector('[data-act="menu"]') : UI === 'results' ? scr.querySelector('#resNext, #resGarage, #qkMenu, [data-q="menu"]') : null;
+  const b = UI === 'garage' ? scr.querySelector('[data-act="menu"]') : UI === 'results' ? scr.querySelector('#resNext, #resGarage, #qkMenu, [data-q="menu"], [data-n="leave"]') : null;
   if (b) navPress(b);
 }
 function navTab(d) {
+  if (OPTS.open) { const T = ['juego', 'sonido', 'pantalla', 'controles', 'pilotos'], k = T.indexOf(OPTS.tab); optsTab(T[(k + (d > 0 ? 1 : 4)) % 5]); const b = document.querySelector(`[data-otab="${OPTS.tab}"]`); if (b) navFocus(b); return; }
   if (UI !== 'garage' || PAUSED) return;
   const tabs = [...document.querySelectorAll('#garageBody [role="tab"]')]; if (!tabs.length) return;
   const i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
@@ -3321,6 +3382,11 @@ function navPoll(g, bv) {
   nav.prev = down;
   if (!scr) { nav.dir = null; return; }
   const now = performance.now();
+  const ae = document.activeElement;
+  if (dir && (dir === 'l' || dir === 'r') && ae && ae.type === 'range' && scr.contains(ae) && (dir !== nav.dir || now >= nav.next)) {
+    const st = parseFloat(ae.step) || 1; ae.value = clamp(parseFloat(ae.value) + (dir === 'r' ? st : -st), parseFloat(ae.min), parseFloat(ae.max));
+    ae.dispatchEvent(new Event('input', { bubbles: true })); nav.next = now + (dir !== nav.dir ? 300 : 90); nav.dir = dir; return;
+  }
   if (dir && (dir !== nav.dir || now >= nav.next)) {
     navMove(dir === 'l' ? -1 : dir === 'r' ? 1 : 0, dir === 'u' ? -1 : dir === 'd' ? 1 : 0);
     nav.next = now + (dir !== nav.dir ? 380 : 140);
@@ -3580,8 +3646,7 @@ function setDrawer(open) {
   menuBtn.setAttribute('aria-expanded', String(open));
   if (open) $('#closeBtn').focus(); else if (drawer.contains(document.activeElement)) (UI === 'menu' ? $('#btnOpts') : menuBtn).focus();
 }
-menuBtn.addEventListener('click', () => setDrawer(!drawer.classList.contains('open')));
-$('#btnOpts').addEventListener('click', () => setDrawer(true));
+menuBtn.addEventListener('click', () => { if (drawer.classList.contains('open')) setDrawer(false); else openOpts(); });
 $('#closeBtn').addEventListener('click', () => setDrawer(false));
 
 const FMT = {
@@ -3741,7 +3806,7 @@ function renderMenu() {
   drawPreviews();
 }
 function goMenu() {
-  quickEnd(); leaveRace(); MODE = 'menu'; document.body.dataset.mode = 'menu';
+  if (NET.on) netClose(); quickEnd(); leaveRace(); MODE = 'menu'; document.body.dataset.mode = 'menu';
   renderMenu(); show('menu');
 }
 
@@ -4090,7 +4155,9 @@ function raceHud() {
   draftFill.style.width = Math.round(clamp(draftK, 0, 1) * 100) + '%';
 }
 function finishRace(abandon) {
-  if (race.over) return; race.over = true; race.block = true;
+  if (race.over) return;
+  if (race.net) { race.over = true; race.block = true; netFinish(abandon); return; }
+  race.over = true; race.block = true;
   const rows = raceRows(race.rivals, abandon ? null : race.finishT), me = rows.find(r => r.player), sn = GS.season;
   const mult = race.mult || 1;
   rows.forEach(r => { if (!(abandon && r.player)) sn.pts[r.name] += POINTS[r.pos - 1] * mult; });
@@ -4134,6 +4201,67 @@ $('#resBody').addEventListener('click', e => {
   else if (e.target.id === 'resGarage') goGarage();
 });
 
+/* ---------- menú de opciones ---------- */
+// Un menú de juego normal para lo que el jugador toca a menudo; la física fina sigue en «Ajustes avanzados».
+const OPTS = { open: false, from: null, wasPaused: false, tab: 'juego' };
+let THEME = 'system'; try { THEME = localStorage.getItem('krpg_theme') || 'system'; } catch (e) {}
+function applyTheme(t) {
+  THEME = t; if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('krpg_theme', t); } catch (e) {}
+}
+applyTheme(THEME);
+// los controles que ya existían (volumen, mando, nombres) se mudan aquí
+$('#opVolBox').append($('#o-vol').closest('.slider'));
+{ const pb = $('#opPadBox'), st = $('#padStatus').closest('p'), sel = $('#padSel').closest('.row'), nt = $('#d-padSel'), kb = st.previousElementSibling;
+  if (kb) pb.append(kb); pb.append(st, sel, nt); }
+$('#opNamesBox').append($('#namesBox'));
+function syncOpts() {
+  $('#op-assist').value = S.assist; $('#opv-assist').textContent = Math.round(S.assist * 100) + ' %';
+  document.querySelectorAll('[data-oopt]').forEach(el => { el.checked = !!S[el.dataset.oopt]; });
+  $('#op-mute').checked = !!SND.muted;
+  document.querySelectorAll('input[name="optheme"]').forEach(r => { r.checked = r.value === THEME; });
+}
+function optsTab(t) {
+  OPTS.tab = t;
+  document.querySelectorAll('[data-otab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.otab === t)));
+  document.querySelectorAll('[data-opane]').forEach(p => { p.hidden = p.dataset.opane !== t; });
+}
+function openOpts(from) {
+  OPTS.open = true; OPTS.from = from || UI; OPTS.wasPaused = PAUSED;
+  if (UI === 'play' && !PAUSED) { PAUSED = true; keys.clear(); touch.clear(); }
+  if (typeof namesUI === 'function') namesUI();
+  syncOpts(); optsTab(OPTS.tab);
+  $('#scr-opts').classList.add('show');
+  const b = document.querySelector(`[data-otab="${OPTS.tab}"]`); if (b) b.focus();
+  if (pad.on) document.body.classList.add('padnav');
+}
+function closeOpts() {
+  if (!OPTS.open) return;
+  OPTS.open = false; $('#scr-opts').classList.remove('show');
+  if (UI === 'play' && !OPTS.wasPaused) PAUSED = false;
+  const back = OPTS.wasPaused ? $('#pOpts') : UI === 'menu' ? $('#btnOpts') : null; if (back) back.focus();
+}
+$('#scr-opts').addEventListener('click', e => {
+  const t = e.target.closest('[data-otab]'); if (t) { optsTab(t.dataset.otab); t.focus(); return; }
+  if (e.target.id === 'opClose') closeOpts();
+  if (e.target.id === 'opAdvanced') { closeOpts(); setDrawer(true); }
+});
+$('#scr-opts').addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'op-assist') { setOpt('assist', parseFloat(t.value)); $('#opv-assist').textContent = Math.round(S.assist * 100) + ' %'; if (GS) { GS.assist = S.assist; saveG(); } }
+  else if (t.dataset.oopt) setOpt(t.dataset.oopt, t.checked);
+  else if (t.id === 'op-mute') { SND.muted = t.checked; try { localStorage.setItem('krpg_mute', t.checked ? '1' : ''); } catch (er) {} }
+  else if (t.name === 'optheme') applyTheme(t.value);
+});
+addEventListener('keydown', e => {
+  if (!OPTS.open) return;
+  if (e.code === 'Escape') { closeOpts(); e.preventDefault(); e.stopImmediatePropagation(); }
+  else if (e.code === 'BracketLeft' || e.code === 'BracketRight') { const T = ['juego', 'sonido', 'pantalla', 'controles', 'pilotos'], k = T.indexOf(OPTS.tab); optsTab(T[(k + (e.code === 'BracketRight' ? 1 : 4)) % 5]); }
+}, true);
+$('#btnOpts').addEventListener('click', () => openOpts('menu'));
+$('#pOpts').addEventListener('click', () => openOpts('pause'));
+try { SND.muted = localStorage.getItem('krpg_mute') === '1'; } catch (e) {}
+
 /* ---------- volumen ---------- */
 $('#o-vol').value = Math.round(SND.vol * 100); $('#v-vol').textContent = Math.round(SND.vol * 100) + ' %';
 $('#o-vol').addEventListener('input', e => { SND.vol = +e.target.value / 100; $('#v-vol').textContent = e.target.value + ' %'; try { localStorage.setItem('krpg_vol', SND.vol); } catch (er) {} audioInit(); });
@@ -4161,6 +4289,277 @@ $('#namesBox').addEventListener('change', e => {
   namesUI();
   if (UI === 'garage') renderGarage(); else if (UI === 'menu') renderMenu();
 });
+
+/* ====================== ONLINE, 2 JUGADORES ======================
+   Conexión directa entre los dos navegadores (WebRTC, con PeerJS para presentarse y su servidor gratuito).
+   Cada jugador simula su propio kart y envía su estado 30 veces por segundo; el del otro se dibuja ~100 ms en el
+   pasado, interpolado, y es un cuerpo sólido contra el que chocas. El que crea la partida (anfitrión) conduce además
+   a los rivales de la IA y los retransmite 20 veces por segundo. Con ?local en la dirección, dos pestañas del mismo
+   navegador se conectan sin internet (para pruebas). */
+const NET = { on: false, role: null, code: '', tr: null, peer: { name: '', color: '#888', on: false }, rtt: 0, buf: [], aiBuf: [],
+              cfg: { track: 'parque', laps: 3, tyre: 'n_medios', diff: 'normal', ai: true }, sendT: 0, aiT: 0, pingT: 0, status: '', inRace: false, resT: 0 };
+const NET_DELAY = 110, NET_LOCAL = /[?&#]local/.test(location.search + location.hash);
+try { Object.assign(NET.cfg, JSON.parse(localStorage.getItem('krpg_netcfg') || '{}')); } catch (e) {}
+const myName = () => (NAMES.me || 'Jugador').slice(0, 14);
+function loadPeerJS() {
+  return new Promise((res, rej) => {
+    if (window.Peer) return res();
+    // primero la copia que va junto al juego (GitHub Pages); si no está, la del CDN
+    const add = (src, next) => { const sc = document.createElement('script'); sc.src = src; sc.onload = () => window.Peer ? res() : next(); sc.onerror = next; document.head.appendChild(sc); };
+    add('peerjs.min.js', () => add('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', () => rej(new Error('no se pudo cargar PeerJS'))));
+  });
+}
+function localTransport(code, role) {
+  const ch = new BroadcastChannel('krpg-' + code), tr = { local: true };
+  tr.send = o => { const m = JSON.stringify({ from: role, o }), lag = +(window.__netLag || 0); if (lag) setTimeout(() => { try { ch.postMessage(m); } catch (e) {} }, lag); else ch.postMessage(m); };
+  ch.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } if (m.from !== role && tr.onmsg) tr.onmsg(m.o); };
+  tr.close = () => { try { ch.postMessage(JSON.stringify({ from: role, o: { k: 'bye' } })); } catch (e) {} ch.close(); };
+  setTimeout(() => { tr.onopen && tr.onopen(); }, 30);
+  return tr;
+}
+// solo para pruebas automáticas: un repetidor WebSocket local hace de «internet» entre dos navegadores
+function relayTransport(code, role) {
+  const ws = new WebSocket(window.__netRelay), tr = { local: true }, q = [];
+  ws.onopen = () => { ws.send(JSON.stringify({ join: code, role })); q.splice(0).forEach(m => ws.send(m)); setTimeout(() => tr.onopen && tr.onopen(), 30); };
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } const lag = +(window.__netLag || 0); lag ? setTimeout(() => tr.onmsg && tr.onmsg(m), lag) : tr.onmsg && tr.onmsg(m); };
+  tr.send = o => { const m = JSON.stringify(o); if (ws.readyState === 1) ws.send(m); else q.push(m); };
+  tr.close = () => { tr.send({ k: 'bye' }); setTimeout(() => ws.close(), 50); };
+  return tr;
+}
+async function peerTransport(code, role) {
+  await loadPeerJS();
+  const tr = {}, wire = conn => {
+    tr.conn = conn;
+    conn.on('open', () => tr.onopen && tr.onopen());
+    conn.on('data', d => tr.onmsg && tr.onmsg(d));
+    conn.on('close', () => { if (tr.conn === conn) { tr.conn = null; tr.onclose && tr.onclose(); } });
+    conn.on('error', e => tr.onerror && tr.onerror(e));
+  };
+  const peer = role === 'host' ? new Peer('krpg-' + code) : new Peer();
+  tr.peer = peer;
+  peer.on('error', e => tr.onerror && tr.onerror(e));
+  peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) {} });
+  if (role === 'host') peer.on('connection', conn => { if (tr.conn && tr.conn.open) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 300); }); return; } wire(conn); });
+  else peer.on('open', () => wire(peer.connect('krpg-' + code, { reliable: true, serialization: 'json' })));
+  if (role === 'host') peer.on('open', () => tr.onready && tr.onready());
+  tr.send = o => { if (tr.conn && tr.conn.open) try { tr.conn.send(o); } catch (e) {} };
+  tr.close = () => { tr.send({ k: 'bye' }); setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 150); };
+  return tr;
+}
+const newCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+async function netStart(role, code) {
+  NET.on = true; NET.role = role; NET.code = code || newCode(); NET.helloBack = false; NET.rtt = 0; NET.peer = { name: '', color: '#888', on: false }; NET.status = role === 'host' ? 'Preparando la partida…' : 'Buscando la partida ' + NET.code + '…';
+  netLobby();
+  try { NET.tr = window.__netRelay ? relayTransport(NET.code, role) : NET_LOCAL ? localTransport(NET.code, role) : await peerTransport(NET.code, role); }
+  catch (e) { NET.status = 'No se pudo cargar la conexión online. Comprueba tu internet.'; NET.on = false; netLobby(); return; }
+  const tr = NET.tr;
+  tr.onready = () => { NET.status = 'Pasa este código a tu amigo: ' + NET.code; netLobby(); };
+  tr.onopen = () => { tr.send({ k: 'hello', name: myName(), color: playerColor() }); if (NET.role === 'host' && NET_LOCAL) { NET.status = 'Pasa este código a tu amigo: ' + NET.code; netLobby(); } };
+  tr.onmsg = netMsg;
+  tr.onclose = () => netPeerLeft();
+  tr.onerror = e => {
+    const t = e && e.type;
+    if (t === 'unavailable-id' && NET.role === 'host') { try { tr.peer.destroy(); } catch (er) {} netStart('host'); return; }
+    NET.status = t === 'peer-unavailable' ? 'No hay ninguna partida con el código ' + NET.code + '. Revísalo con tu amigo.' :
+                 t === 'network' || t === 'server-error' || t === 'socket-error' ? 'No se pudo contactar con el servidor de emparejamiento. Prueba de nuevo en un momento.' :
+                 'Error de conexión (' + (t || 'desconocido') + ').';
+    if (t === 'peer-unavailable') { NET.on = false; try { tr.peer.destroy(); } catch (er) {} }
+    netLobby();
+  };
+}
+function netClose() { if (NET.tr) try { NET.tr.close(); } catch (e) {} NET.tr = null; NET.on = false; NET.inRace = false; NET.peer.on = false; }
+function netPeerLeft() {
+  NET.peer.on = false; NET.status = (NET.peer.name || 'Tu amigo') + ' se ha desconectado.';
+  if (race && race.net) { const r = race.rivals.find(x => x.net); if (r && !r.done) { r.done = true; r.left = true; r.finT = null; r.kt.ghost = true; } }
+  if (UI === 'results') { if (NET.inRace) netResults(); else netLobby(); }
+}
+function netMsg(o) {
+  if (!o || typeof o.k !== 'string') return;
+  const now = performance.now();
+  switch (o.k) {
+    case 'hello':
+      { const col = /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : '#888';                  // si los dos lleváis el mismo color, el suyo se ve distinto
+        NET.peer = { name: String(o.name || 'Amigo').slice(0, 14), color: col.toLowerCase() === playerColor().toLowerCase() ? (col.toLowerCase() === '#1565c0' ? '#2e7d32' : '#1565c0') : col, on: true }; }
+      if (!NET.helloBack) { NET.helloBack = true; NET.tr.send({ k: 'hello', name: myName(), color: playerColor() }); }
+      NET.status = NET.role === 'host' ? NET.peer.name + ' está en la sala.' : 'Conectado con ' + NET.peer.name + '. Espera a que empiece la carrera.';
+      if (NET.role === 'host') NET.tr.send({ k: 'cfg', cfg: NET.cfg });
+      if (!NET.inRace) netLobby();
+      break;
+    case 'full': NET.status = 'Esa partida ya tiene dos jugadores.'; netClose(); netLobby(); break;
+    case 'cfg': if (NET.role === 'guest') { NET.cfg = Object.assign({}, NET.cfg, o.cfg); if (!NET.inRace) netLobby(); } break;
+    case 'start': if (NET.role === 'guest') netBeginRace(o, false); break;
+    case 'lobby': if (NET.role === 'guest') netToLobby(); break;
+    case 'st': NET.buf.push(Object.assign({ t: now }, o)); if (NET.buf.length > 90) NET.buf.shift(); netRemoteFinish(o); break;
+    case 'ai': NET.aiBuf.push({ t: now, r: o.r }); if (NET.aiBuf.length > 60) NET.aiBuf.shift(); break;
+    case 'ping': NET.tr.send({ k: 'pong', t: o.t }); break;
+    case 'pong': { const r = now - o.t; NET.rtt = NET.rtt ? NET.rtt * .8 + r * .2 : r; break; }
+    case 'bye': netPeerLeft(); break;
+  }
+}
+function netRemoteFinish(o) {
+  if (!race || !race.net || !(o.fin || o.ab)) return;
+  const r = race.rivals.find(x => x.net); if (!r || (r.done && !r.left)) return;
+  r.done = true; r.finT = o.ab ? null : o.fin; r.abandon = !!o.ab; r.estT = o.ab ? Infinity : o.fin; r.kt.ghost = true;
+  if (UI === 'results') netResults();
+}
+// muestra interpolada de un búfer [{t, …}] en el instante tq; si faltan datos, extrapola con la velocidad (como mucho 0,25 s)
+function netSample(buf, tq, get) {
+  if (!buf.length) return null;
+  let k = buf.length - 1;
+  if (tq >= buf[k].t) { const p = get(buf[k]); if (!p) return null; const dt = Math.min(.25, (tq - buf[k].t) / 1000); return Object.assign({}, p, { x: p.x + p.vx * dt, y: p.y + p.vy * dt }); }
+  while (k > 0 && buf[k - 1].t > tq) k--;
+  if (k === 0) return get(buf[0]);
+  const A = get(buf[k - 1]), Bq = get(buf[k]); if (!A || !Bq) return Bq || A;
+  const f = (tq - buf[k - 1].t) / Math.max(1, buf[k].t - buf[k - 1].t), da = Math.atan2(Math.sin(Bq.a - A.a), Math.cos(Bq.a - A.a));
+  return Object.assign({}, Bq, { x: A.x + (Bq.x - A.x) * f, y: A.y + (Bq.y - A.y) * f, a: A.a + da * f, vx: A.vx + (Bq.vx - A.vx) * f, vy: A.vy + (Bq.vy - A.vy) * f, D: A.D + (Bq.D - A.D) * f });
+}
+function puppet(kt, s) { Object.assign(kt.B, { x: s.x, y: s.y, a: s.a, vx: s.vx, vy: s.vy, w: 0, steer: s.st || 0 }); }
+function netHostStep() {
+  const R = race; if (!R) return;
+  const r = R.rivals.find(x => x.net);
+  if (r && !r.left) { const s = netSample(NET.buf, performance.now() - NET_DELAY, m => m); if (s) puppet(r.kt, s); }
+  rivalsStep();
+}
+function netGuestStep() {
+  const R = race; if (!R) return;
+  const tq = performance.now() - NET_DELAY;
+  for (const r of R.rivals) {
+    const s = r.net ? (r.left ? null : netSample(NET.buf, tq, m => m)) : netSample(NET.aiBuf, tq, m => { const v = m.r[r.ai]; return v ? { x: v[0], y: v[1], a: v[2], vx: v[3], vy: v[4], st: v[5], D: v[6], done: v[7], est: v[8] } : null; });
+    if (!s) continue;
+    puppet(r.kt, s);
+    r.x = s.x; r.y = s.y; r.a = s.a; r.vx = s.vx; r.vy = s.vy; r.vs = Math.hypot(s.vx, s.vy); r.D = s.D;
+    if (!r.net) { r.done = !!s.done; r.estT = s.est; if (s.done) { r.finT = s.est; r.kt.ghost = true; } }
+    else if (!r.done) { const lap = TRACK.pace, t = R.state === 'grid' ? 0 : simT - R.t0; r.estT = t + Math.max(0, TRACK.LEN * R.laps - r.D) / (TRACK.LEN / lap); }
+  }
+  draftUpdate(R);
+}
+function netTick(now) {
+  const tr = NET.tr; if (!tr) return;
+  if (now - NET.pingT > 1000) { NET.pingT = now; tr.send({ k: 'ping', t: now }); }
+  if (!race || !race.net) return;
+  if (now - NET.sendT >= 33) {
+    NET.sendT = now;
+    const D = LAP.cnt * TRACK.LEN + LAP.s, r3 = v => Math.round(v * 1000) / 1000;
+    tr.send({ k: 'st', x: r3(B.x), y: r3(B.y), a: r3(B.a), vx: r3(B.vx), vy: r3(B.vy), st: r3(B.steer || 0), D: r3(D), fin: race.myFin || 0, ab: race.myAb ? 1 : 0 });
+  }
+  if (NET.role === 'host' && now - NET.aiT >= 50) {
+    NET.aiT = now;
+    const ai = race.rivals.filter(r => !r.net), r2 = v => Math.round(v * 100) / 100;
+    if (ai.length) tr.send({ k: 'ai', r: ai.map(r => [r2(r.x), r2(r.y), r2(r.a), r2(r.vx), r2(r.vy), r2(r.kt.B.steer || 0), r2(r.D), r.done ? 1 : 0, r2(r.estT || 0)]) });
+  }
+  if (UI === 'results' && NET.inRace && now - NET.resT > 1000) { NET.resT = now; netResults(); }
+}
+function netBeginRace(msg, isHost) {
+  quickEnd(); leaveRace();
+  const cfg = Object.assign({}, NET.cfg, msg.cfg), real = GS;
+  const st = newState({ rp: real.rp, bestLaps: real.bestLaps, stats: { champs: 0, wins: 0, podiums: 0, races: 0, bankruptcies: 0 }, diff: cfg.diff, color: real.color, assist: real.assist });
+  st.parts.chasis = newPart('chasis', 'ch_alquiler'); st.parts.motor = newPart('motor', 'm_std', { health: 1 });
+  st.parts.neumaticos = newPart('neumaticos', BOX_TYRES.includes(cfg.tyre) ? cfg.tyre : 'n_medios'); st.parts.frenos = newPart('frenos', 'f_discos', { health: 1 }); st.parts.cadena = newPart('cadena', 'cadena', { health: 1 });
+  st.money = 0; st.champ = 1; st.fuel = 'normal'; st.gear = 'estandar';
+  const pts = { 'Tú': 0 }; RIVALS.forEach(r => { pts[r.name] = 0; });
+  const laps = cfg.laps === 10 ? 10 : 3;
+  st.season = { race: 0, pts, results: [], tracks: [trackById(cfg.track) ? cfg.track : 'parque'], form: RIVALS.map(() => 1), laps };
+  QUICK = { real, net: true }; GS = st;
+  enterTrack();
+  let ai = cfg.ai ? makeRivals(TRACK, cfg.diff, null, laps, Math.random, 1).slice(0, 4) : [];
+  if (!isHost && msg.ai) ai = ai.slice(0, msg.ai.length).map((r, k) => Object.assign(r, { name: String(msg.ai[k].name).slice(0, 14), color: msg.ai[k].color }));
+  ai.forEach((r, k) => { r.ai = k; });
+  const remote = { name: NET.peer.name || 'Amigo', color: NET.peer.color, i: 9, net: true, lt: Array(laps).fill(TRACK.pace), d0: 6, lane: 0, tgt: 0, latOff: 0, latV: 0, lagT: 0, dV: 0, hold: 0 };
+  const rivals = ai.concat([remote]);
+  const slot = cfg.ai ? (isHost ? 4 : 5) : (isHost ? 0 : 1);
+  assignGrid(rivals, slot, rivals.map((_, k) => k));
+  race = { state: 'grid', cd: 3 - (isHost ? 0 : Math.min(.4, NET.rtt / 2000)), t0: 0, t: 0, laps, mult: 1, slot, rivals, block: true, finishT: null, fuelCost: 0, fuel: 'normal', pos: slot + 1, over: false,
+           contacts: 0, pHint: -1, look: 'alquiler', tyreBefore: GS.parts.neumaticos.wear.slice(), net: true, netLive: true };
+  reset(slot); SMK.length = 0; ACC.eng = ACC.brk = ACC.chn = 0;
+  setupRaceKarts(race);
+  NET.buf.length = 0; NET.aiBuf.length = 0; NET.inRace = true;
+  stepHook = isHost ? netHostStep : netGuestStep; draftK = 0;
+  if (isHost) rivalsStep();
+  $('#setupName').textContent = catOf('chasis', 'ch_alquiler').name;
+  show('play');
+}
+function netHostStart() {
+  if (!NET.peer.on) return;
+  const ai = NET.cfg.ai ? RIVALS.slice(0, 4).map(r => ({ name: r.name, color: r.color })) : [];
+  NET.tr.send({ k: 'start', cfg: NET.cfg, ai });
+  netBeginRace({ cfg: NET.cfg, ai }, true);
+}
+function netFinish(abandon) {
+  race.myFin = abandon ? 0 : race.finishT; race.myAb = !!abandon;
+  netTick(performance.now() + 1e6);                  // que el otro se entere ya
+  NET.resT = 0; netResults(); show('results');
+}
+function netResults() {
+  if (!race || !race.net) return;
+  const rows = race.rivals.map(r => ({ r, name: r.name, color: r.color, t: r.left || r.abandon ? Infinity : (r.estT !== null && r.estT !== undefined ? r.estT : rivalFinish(r)) }));
+  rows.push({ player: true, name: myName(), color: playerColor(), t: race.myAb || race.finishT === null ? Infinity : race.finishT });
+  rows.sort((a, b) => a.t - b.t); rows.forEach((x, k) => { x.pos = k + 1; });
+  const me = rows.find(x => x.player), allDone = race.rivals.every(r => r.done);
+  const timeTxt = x => x.player ? (race.myAb ? 'abandono' : fmt(x.t)) : x.r.left ? 'desconectado' : x.r.abandon ? 'abandono' : x.r.done ? fmt(x.t) : 'en carrera…';
+  $('#resBody').innerHTML = `<h2>${race.myAb ? 'Has abandonado' : me.pos === 1 ? '¡Victoria!' : me.pos + '.º puesto'} en ${TRACK.name}</h2>` +
+    `<table class="tbl"><thead><tr><th scope="col">Pos.</th><th scope="col">Piloto</th><th scope="col">Tiempo</th></tr></thead><tbody>${rows.map(x =>
+      `<tr class="${x.player ? 'me' : ''}"><td>${x.pos}</td><td><i class="dot" style="background:${x.color}"></i>${esc(x.name)}${x.player ? ' (tú)' : x.r.net ? ' (online)' : ' (IA)'}</td><td>${timeTxt(x)}</td></tr>`).join('')}</tbody></table>` +
+    `<p class="dim">${allDone ? 'Han llegado todos.' : 'La carrera sigue: la tabla se actualiza sola.'}${NET.peer.on ? ' Conexión: ' + Math.round(NET.rtt) + ' ms de ida y vuelta.' : ' ' + esc(NET.status)}</p>` +
+    `<div class="btns">${NET.role === 'host' ? `<button class="btn pri big2" data-n="tolobby">Volver a la sala</button>` : `<button class="btn big2" disabled>Esperando al anfitrión…</button>`}<button class="btn big2" data-n="leave">Salir</button></div>`;
+}
+function netToLobby() {
+  if (NET.role === 'host' && NET.tr) NET.tr.send({ k: 'lobby' });
+  leaveRace(); quickEnd(); NET.inRace = false; MODE = 'menu'; document.body.dataset.mode = 'menu';
+  netLobby();
+}
+function netLobby() {
+  const T = trackById(NET.cfg.track) || TRACKS[0], host = NET.role === 'host', c = NET.cfg;
+  let h = `<h2>Online, 2 jugadores</h2>`;
+  if (!NET.on && window.claude && !window.__netRelay) {
+    h += `<p>Dentro de claude.ai las conexiones directas entre navegadores están bloqueadas, así que el online solo funciona en la web del juego:</p>` +
+      `<p><a href="https://vreguera.github.io/karting-rpg/" target="_blank" rel="noopener"><b>vreguera.github.io/karting-rpg</b></a></p>` +
+      `<div class="btns"><button class="btn big2" data-n="leave">Volver</button></div>`;
+  } else if (!NET.on) {
+    h += `<p>Uno de los dos crea la partida y le pasa el código de 4 letras al otro. La conexión va directa entre vuestros navegadores.</p>` +
+      `<label class="fld">Tu nombre <input type="text" id="nnick" data-n="nick" maxlength="14" value="${esc(NAMES.me)}" placeholder="Jugador"></label>` +
+      `<div class="btns"><button class="btn pri big2" data-n="host">Crear partida</button></div>` +
+      `<label class="fld">Código de tu amigo <input type="text" id="ncode" data-n="code" maxlength="4" autocomplete="off" style="text-transform:uppercase;width:6em" placeholder="ABCD"></label>` +
+      `<div class="btns"><button class="btn big2" data-n="join">Unirme</button></div>` +
+      (NET.status ? `<p class="msg warn">${esc(NET.status)}</p>` : '');
+  } else {
+    h += host ? `<p class="kick">Código de la partida</p><p style="font:400 56px/1 var(--f-num);letter-spacing:.12em">${NET.code}</p>` : `<p class="kick">Partida ${NET.code}</p>`;
+    h += `<p class="msg">${esc(NET.status)}${NET.peer.on && NET.rtt ? ' · ' + Math.round(NET.rtt) + ' ms' : ''}</p>`;
+    h += `<div class="card board" style="padding:10px 12px;margin:10px 0"><div class="bhead">${trackSvg(T, 200, 116, 'tbig')}<div><h3>${T.name}</h3><p>${c.laps} vueltas · ${catOf('neumaticos', c.tyre).name.toLowerCase()} · ${c.ai ? '4 rivales de la IA (' + ({ facil: 'fáciles', normal: 'normales', dificil: 'difíciles', experto: 'expertos' })[c.diff] + ')' : 'sin rivales de la IA'}</p></div></div></div>`;
+    if (host) {
+      const diffs = [['facil', 'Fáciles'], ['normal', 'Normales'], ['dificil', 'Difíciles'], ['experto', 'Expertos']];
+      h += `<label class="fld">Circuito <select data-n="track">${TRACKS.map(t => `<option value="${t.id}"${t.id === T.id ? ' selected' : ''}>${t.name}${t.country ? ' (' + t.country + ')' : ''}</option>`).join('')}</select></label>` +
+        radios('nlaps', [{ id: '3', name: '3 vueltas' }, { id: '10', name: '10 vueltas' }], String(c.laps), 'Vueltas') +
+        radios('ntyre', BOX_TYRES.map(id => ({ id, name: (n => n[0].toUpperCase() + n.slice(1))(catOf('neumaticos', id).name.replace('Neumáticos ', '')) })), c.tyre, 'Neumáticos') +
+        `<label class="fld">Rivales de la IA <select data-n="ai"><option value="0"${c.ai ? '' : ' selected'}>Sin rivales, solo vosotros</option>${diffs.map(d => `<option value="${d[0]}"${c.ai && c.diff === d[0] ? ' selected' : ''}>4 rivales ${d[1].toLowerCase()}</option>`).join('')}</select></label>` +
+        `<div class="btns"><button class="btn pri big2" data-n="start"${NET.peer.on ? '' : ' disabled'}>Empezar carrera</button><button class="btn big2" data-n="leave">Salir</button></div>`;
+    } else h += `<div class="btns"><button class="btn big2" data-n="leave">Salir</button></div>`;
+  }
+  h += `<p class="dim">Los dos corréis con el kart de alquiler. Si la conexión no arranca, prueba con otra wifi o con los datos del móvil: algunas redes la bloquean.</p>`;
+  $('#resBody').innerHTML = h;
+  if (UI !== 'results') show('results');
+}
+function netCfgChanged() { try { localStorage.setItem('krpg_netcfg', JSON.stringify(NET.cfg)); } catch (e) {} if (NET.on && NET.role === 'host' && NET.tr) NET.tr.send({ k: 'cfg', cfg: NET.cfg }); netLobby(); }
+$('#resBody').addEventListener('click', e => {
+  const b = e.target.closest('button[data-n]'); if (!b) return;
+  const a = b.dataset.n;
+  if (a === 'host') netStart('host');
+  else if (a === 'join') { const v = ($('#ncode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (v.length !== 4) { NET.status = 'El código tiene 4 letras o números.'; netLobby(); return; } netStart('guest', v); }
+  else if (a === 'start') netHostStart();
+  else if (a === 'tolobby') netToLobby();
+  else if (a === 'leave') { netClose(); NET.status = ''; goMenu(); }
+});
+$('#resBody').addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.n === 'nick') { NAMES.me = t.value.trim().slice(0, 14); try { localStorage.setItem('krpg_names', JSON.stringify(NAMES)); } catch (er) {} return; }
+  if (!NET.on || NET.role !== 'host') return;
+  if (t.dataset.n === 'track') NET.cfg.track = t.value;
+  else if (t.dataset.n === 'ai') { NET.cfg.ai = t.value !== '0'; if (NET.cfg.ai) NET.cfg.diff = t.value; }
+  else if (t.name === 'nlaps') NET.cfg.laps = +t.value;
+  else if (t.name === 'ntyre') NET.cfg.tyre = t.value;
+  else return;
+  netCfgChanged();
+});
+$('#btnOnline').addEventListener('click', () => { quickEnd(); leaveRace(); MODE = 'menu'; NET.status = ''; netLobby(); });
 
 /* ---------- carrera rápida ---------- */
 // Usa todo el flujo del campeonato con un estado de juego temporal (kart de alquiler, una sola carrera) que no se guarda;
@@ -4243,6 +4642,7 @@ function setPause(on) {
     const champ = MODE === 'champ';
     const q = champ && race.quali;
     $('#pRestart').textContent = q ? 'Reiniciar la clasificación' : champ ? 'Reiniciar carrera' : 'Volver a la parrilla';
+    $('#pRestart').hidden = !!(race && race.net);
     $('#pQuit').textContent = q ? 'Terminar la clasificación' : champ ? (race.state === 'grid' ? 'Volver a boxes' : 'Abandonar carrera') : 'Volver al menú';
     $('#pauseInfo').textContent = q ? `Clasificación en ${TRACK.name}. ${race.pLaps.length} de ${QUALI_LAPS} vueltas hechas${pBest(race) !== null ? ', mejor ' + fmt(pBest(race)) : ''}. Terminar ahora usa lo que lleves; sin tiempo válido sales el último.` : champ ? `${TRACK.name}. ${race.state === 'grid' ? 'En parrilla' : 'Vuelta ' + Math.max(1, Math.min(race.laps, LAP.cnt + 1)) + ' de ' + race.laps + ', ' + fmt(race.t || 0)}. Reiniciar devuelve los neumáticos al estado de la salida.` : `Pruebas libres en ${TRACK.name}.`;
     $('#pResume').focus();
